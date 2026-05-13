@@ -770,3 +770,70 @@ inline void to_json(json& j, const Browser_OnNavigateByKey& m) {
   j["key"] = m.key;
   j["info"] = m.info;
 }
+
+struct Client_CreateNetworkRequest {
+  std::string url;
+  std::string method;
+  std::optional<std::map<std::string, std::string>> headers;
+  std::optional<std::vector<uint8_t>> body;
+};
+
+inline void from_json(const json& j, Client_CreateNetworkRequest& m) {
+  j.at("url").get_to(m.url);
+  j.at("method").get_to(m.method);
+  if (j.contains("headers") && !j.at("headers").is_null()) {
+    m.headers = j.at("headers").get<std::map<std::string, std::string>>();
+  }
+  if (j.contains("body") && !j.at("body").is_null()) {
+    m.body = j.at("body").get<std::vector<uint8_t>>();
+  }
+}
+
+struct Client_CreateHttpRequest {
+  std::string url;
+  std::string method;
+  std::optional<std::map<std::string, std::string>> headers;
+  std::optional<std::vector<uint8_t>> body;
+};
+
+inline void from_json(const json& j, Client_CreateHttpRequest& m) {
+  j.at("url").get_to(m.url);
+  j.at("method").get_to(m.method);
+  if (j.contains("headers") && !j.at("headers").is_null()) {
+    m.headers = j.at("headers").get<std::map<std::string, std::string>>();
+  }
+  if (j.contains("body") && !j.at("body").is_null()) {
+    m.body = j.at("body").get<std::vector<uint8_t>>();
+  }
+}
+
+struct HttpClient_OnResponse {
+  int statusCode;
+  std::string statusText;
+  std::map<std::string, std::string> headers;
+};
+
+inline void to_json(json& j, const HttpClient_OnResponse& m) {
+  j = json::object();
+  j["statusCode"] = m.statusCode;
+  j["statusText"] = m.statusText;
+  j["headers"] = m.headers;
+}
+
+struct HttpClient_OnData {
+  std::vector<uint8_t> data;
+};
+
+inline void to_json(json& j, const HttpClient_OnData& m) {
+  j = json::object();
+  j["data"] = m.data;
+}
+
+struct HttpClient_OnError {
+  std::string error;
+};
+
+inline void to_json(json& j, const HttpClient_OnError& m) {
+  j = json::object();
+  j["error"] = m.error;
+}

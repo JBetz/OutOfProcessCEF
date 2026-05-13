@@ -14,6 +14,7 @@
 #include <include/base/cef_callback.h>
 #include <include/cef_parser.h>
 #include <include/cef_task.h>
+#include <include/cef_urlrequest.h>
 #include <include/wrapper/cef_closure_task.h>
 #include <json.hpp>
 
@@ -22,12 +23,12 @@
 #include "guid_ext.hpp"
 #include "rpc.hpp"
 #include "thread_safe_queue.hpp"
+#include "http_request_client.h"
 
 using json = nlohmann::json;
 
 const char kEvalMessage[] = "Eval";
 
-// Callback for CefBrowserHost::DownloadImage
 class DownloadImageCallback : public CefDownloadImageCallback {
  public:
   DownloadImageCallback(BrowserProcessHandler* handler,
@@ -270,6 +271,44 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
   }
 }
 
+void BrowserProcessHandler::Client_CreateHttpRequestRpc(
+    const UUID& requestId,
+    Client_CreateHttpRequest args) {
+  int httpRequestId = nextHttpRequestId++;
+
+  CefRefPtr<CefRequest> cefRequest = CefRequest::Create();
+  cefRequest->SetURL(args.url);
+  cefRequest->SetMethod(args.method);
+
+  if (args.headers.has_value()) {
+    CefRequest::HeaderMap headerMap;
+    for (const auto& [k, v] : args.headers.value()) {
+      headerMap.emplace(k, v);
+    }
+    cefRequest->SetHeaderMap(headerMap);
+  }
+  
+  if (args.body.has_value() && !args.body->empty()) {
+    CefRefPtr<CefPostData> postData = CefPostData::Create();
+    CefRefPtr<CefPostDataElement> element = CefPostDataElement::Create();
+    element->SetToBytes(args.body->size(), args.body->data());
+    postData->AddElement(element);
+    cefRequest->SetPostData(postData);
+  }
+
+  CefRefPtr<HttpRequestClient> client =
+      new HttpRequestClient(this, httpRequestId);
+  httpRequestEntries[httpRequestId] =
+      CefURLRequest::Create(cefRequest, client, nullptr);
+
+  RpcResponse response;
+  response.requestId = requestId;
+  response.success = true;
+  response.returnValue = httpRequestId;
+  json jsonResponse = response;
+  SendMessage(jsonResponse.dump());
+}
+
 void BrowserProcessHandler::Client_ShutdownRpc() {
   isShuttingDown = true;
   if (browserEntries.empty()) {
@@ -352,6 +391,16 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
           TID_UI,
           base::BindOnce(&BrowserProcessHandler::Client_CreateBrowserRpc, this,
                          request.id, arguments.url, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated));
+      return;
+    }
+
+    if (request.methodName == "CreateHttpRequest") {
+      Client_CreateHttpRequest args =
+          request.arguments.get<Client_CreateHttpRequest>();
+      CefPostTask(
+          TID_UI,
+          base::BindOnce(&BrowserProcessHandler::Client_CreateHttpRequestRpc,
+                         this, request.id, std::move(args)));
       return;
     }
 
@@ -570,6 +619,22 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
     }
   }
 
+  if (request.className == "HttpRequest") {
+    auto it = httpRequestEntries.find(request.instanceId);
+    if (it == httpRequestEntries.end()) {
+      SDL_Log("RpcWorkerThread: HttpRequest instance %d not found",
+              request.instanceId);
+      return;
+    }
+
+    if (request.methodName == "Cancel") {
+      CefPostTask(TID_UI, base::BindOnce(
+                              &BrowserProcessHandler::HttpRequest_CancelRpc,
+                              this, request.instanceId));
+      return;
+    }
+  }
+
   SDL_Log("RpcWorkerThread: unknown message method '%s'",
           request.methodName.c_str());
 }
@@ -724,6 +789,18 @@ int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
                  handler->windowMessageId, 0, 0);
   }
   return 0;
+}
+
+void BrowserProcessHandler::HttpRequest_CancelRpc(const int requestId) {
+  auto it = httpRequestEntries.find(requestId);
+  if (it != httpRequestEntries.end()) {
+    it->second->Cancel();
+    httpRequestEntries.erase(it);
+  }
+}
+
+void BrowserProcessHandler::RemoveHttpRequest(const int requestId) {
+  httpRequestEntries.erase(requestId);
 }
 
 template std::optional<std::monostate>

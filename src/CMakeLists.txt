@@ -17,6 +17,8 @@ set(CEFPROCESSRUNNER_SRCS
   command_line_switches.cc
   command_line_switches.h
   guid_ext.hpp
+  http_request_client.cc
+  http_request_client.h
   other_process_handler.cc
   other_process_handler.h
   process_handler.cc
