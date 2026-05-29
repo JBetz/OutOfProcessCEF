@@ -279,27 +279,27 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
   CefRefPtr<CefRequest> cefRequest = CefRequest::Create();
   cefRequest->SetURL(args.url);
   cefRequest->SetMethod(args.method);
-
-  if (args.headers.has_value()) {
-    CefRequest::HeaderMap headerMap;
-    for (const auto& [k, v] : args.headers.value()) {
-      headerMap.emplace(k, v);
-    }
-    cefRequest->SetHeaderMap(headerMap);
-  }
   
-  if (args.body.has_value() && !args.body->empty()) {
+  if (args.body.has_value()) {
+    std::string bodyString = args.body->dump();
     CefRefPtr<CefPostData> postData = CefPostData::Create();
     CefRefPtr<CefPostDataElement> element = CefPostDataElement::Create();
-    element->SetToBytes(args.body->size(), args.body->data());
+    element->SetToBytes(bodyString.size(), bodyString.data());
     postData->AddElement(element);
     cefRequest->SetPostData(postData);
   }
 
+  if (args.headers.has_value()) {
+    for (const auto& [k, v] : args.headers.value()) {
+      cefRequest->SetHeaderByName(k.c_str(), v.c_str(), true);
+    }
+  }
+
   CefRefPtr<HttpRequestClient> client =
       new HttpRequestClient(this, httpRequestId);
-  httpRequestEntries[httpRequestId] =
-      CefURLRequest::Create(cefRequest, client, nullptr);
+  CefRefPtr<CefURLRequest> urlRequest =
+      CefURLRequest::Create(cefRequest, client, CefRequestContext::GetGlobalContext());
+  httpRequestEntries[httpRequestId] = urlRequest;
 
   RpcResponse response;
   response.requestId = requestId;
@@ -727,16 +727,16 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       if (recvBuffer.size() < 4 + msgLen)
         break;
 
-      std::string jsonMsg(recvBuffer.begin() + 4,
+      std::string jsonMessageString(recvBuffer.begin() + 4,
                           recvBuffer.begin() + 4 + msgLen);
       recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
 
       json jsonMessage;
       try {
-        jsonMessage = json::parse(jsonMsg);
+        jsonMessage = json::parse(jsonMessageString);
       } catch (const nlohmann::json::parse_error& e_parse) {
-        size_t previewLen = std::min<size_t>(jsonMsg.size(), 256);
-        std::string preview = jsonMsg.substr(0, previewLen);
+        size_t previewLen = std::min<size_t>(jsonMessageString.size(), 256);
+        std::string preview = jsonMessageString.substr(0, previewLen);
         SDL_Log(
             "RpcReceiveThread: JSON parse_error: %s at byte=%u "
             "payload_preview='%s'",
@@ -748,13 +748,28 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
         continue;
       }
 
-      if (!jsonMessage.contains("requestId")) {
-        handler->HandleRpcRequest(jsonMessage.get<RpcRequest>());
-      } else {
-        handler->HandleRpcResponse(jsonMessage.get<RpcResponse>());
+      try {
+        if (!jsonMessage.contains("requestId")) {
+          handler->HandleRpcRequest(jsonMessage.get<RpcRequest>());
+        } else {
+          handler->HandleRpcResponse(jsonMessage.get<RpcResponse>());
+        }
+      } catch (const nlohmann::json::exception& e) {
+        SDL_Log("RpcReceiveThread: JSON exception during dispatch: %s", e.what());
+        try {
+          if (jsonMessage.contains("id")) {
+            UUID requestId;
+            from_json(jsonMessage.at("id"), requestId);
+            handler->SendErrorResponse(requestId, e.what());
+          }
+        } catch (...) {
+          SDL_Log("RpcReceiveThread: could not send error response");
+        }
+      } catch (const std::exception& e) {
+        SDL_Log("RpcReceiveThread: exception during dispatch: %s", e.what());
       }
-    }
-  }
+    }  // end while (recvBuffer.size() >= 4)
+  }  // end while (true)
   return 0;
 }
 

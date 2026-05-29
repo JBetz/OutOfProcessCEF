@@ -15,7 +15,7 @@ void HttpRequestClient::OnRequestComplete(CefRefPtr<CefURLRequest> request) {
 
   RpcRequest notification;
   notification.id = CreateUuid();
-  notification.className = "HttpClient";
+  notification.className = "HttpRequest";
   notification.instanceId = httpRequestId;
 
   if (request->GetRequestStatus() == UR_SUCCESS &&
@@ -33,8 +33,8 @@ void HttpRequestClient::OnRequestComplete(CefRefPtr<CefURLRequest> request) {
     notification.arguments = response;
   } else {
     HttpClient_OnError error;
-    error.error = "Request failed with error: " +
-                  std::to_string(request->GetRequestError());
+    error.requestStatus = request->GetRequestStatus();
+    error.errorCode = request->GetRequestError();
     notification.methodName = "OnError";
     notification.arguments = error;
   }
@@ -53,7 +53,7 @@ void HttpRequestClient::OnDownloadData(CefRefPtr<CefURLRequest> request,
 
   RpcRequest notification;
   notification.id = CreateUuid();
-  notification.className = "HttpClient";
+  notification.className = "HttpRequest";
   notification.methodName = "OnData";
   notification.instanceId = httpRequestId;
   notification.arguments = chunk;

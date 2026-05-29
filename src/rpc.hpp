@@ -793,7 +793,7 @@ struct Client_CreateHttpRequest {
   std::string url;
   std::string method;
   std::optional<std::map<std::string, std::string>> headers;
-  std::optional<std::vector<uint8_t>> body;
+  std::optional<json> body;
 };
 
 inline void from_json(const json& j, Client_CreateHttpRequest& m) {
@@ -803,7 +803,7 @@ inline void from_json(const json& j, Client_CreateHttpRequest& m) {
     m.headers = j.at("headers").get<std::map<std::string, std::string>>();
   }
   if (j.contains("body") && !j.at("body").is_null()) {
-    m.body = j.at("body").get<std::vector<uint8_t>>();
+    m.body = j.at("body").get<json>();
   }
 }
 
@@ -830,10 +830,12 @@ inline void to_json(json& j, const HttpClient_OnData& m) {
 }
 
 struct HttpClient_OnError {
-  std::string error;
+  int requestStatus;
+  int errorCode;
 };
 
 inline void to_json(json& j, const HttpClient_OnError& m) {
   j = json::object();
-  j["error"] = m.error;
+  j["requestStatus"] = m.requestStatus;
+  j["errorCode"] = m.errorCode;
 }

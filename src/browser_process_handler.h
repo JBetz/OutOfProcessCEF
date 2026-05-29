@@ -61,7 +61,7 @@ public:
   std::map<UUID, std::unique_ptr<ResponseEntry>> responseEntries;
   std::map<int, std::pair<CefRefPtr<BrowserHandler>, CefRefPtr<CefBrowser>>> browserEntries;
   std::map<int, CefRefPtr<CefURLRequest>> httpRequestEntries;
-  int nextHttpRequestId = 0;
+  int nextHttpRequestId = 1;
   bool isShuttingDown;
 
   NET_Server* socketServer;
