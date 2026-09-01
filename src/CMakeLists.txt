@@ -85,4 +85,16 @@ if(OS_WINDOWS)
   COPY_FILES("${CEF_TARGET}" "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "${CEF_TARGET_OUT_DIR}")
   COPY_FILES("${CEF_TARGET}" "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "${CEF_TARGET_OUT_DIR}")
   COPY_FILES("${CEF_TARGET}" "${SDL_DLLS}" "${CMAKE_SOURCE_DIR}" "${CEF_TARGET_OUT_DIR}")
+
+  # Copy build output to install directory if specified in local_config.cmake.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/local_config.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/local_config.cmake")
+  endif()
+  
+  if(INSTALL_DIR)
+    add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CEF_TARGET_OUT_DIR} ${INSTALL_DIR}
+      COMMENT "Installing CEF build artifacts in ${INSTALL_DIR}"
+    )
+  endif()
 endif()

@@ -53,3 +53,4 @@ Thumbs.db
 /tools/buildtools/win/clang-format.exe
 out
 .vs
+/src/local_config.cmake
