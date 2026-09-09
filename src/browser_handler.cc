@@ -79,6 +79,10 @@ CefRefPtr<CefLoadHandler> BrowserHandler::GetLoadHandler() {
   return this;
 }
 
+CefRefPtr<CefDownloadHandler> BrowserHandler::GetDownloadHandler() {
+  return this;
+}
+
 bool BrowserHandler::OnProcessMessageReceived(
     CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefFrame> frame,
@@ -351,18 +355,23 @@ bool BrowserHandler::OnBeforeBrowse(
     bool user_gesture,
     bool is_redirect) {
   Browser_OnBeforeBrowse arguments;
-  arguments.url = request->GetURL().ToString();
-  arguments.method = request->GetMethod().ToString();
-  arguments.referrerUrl = request->GetReferrerURL().ToString();
+  arguments.browserId = browser->GetIdentifier();
+  BrowseEvent browseEvent;
+  browseEvent.url = request->GetURL().ToString();
+  browseEvent.method = request->GetMethod().ToString();
+  browseEvent.referrerUrl = request->GetReferrerURL().ToString();
   CefRequest::HeaderMap headerMap;
   request->GetHeaderMap(headerMap);
   for (const auto& [key, value] : headerMap) {
-    arguments.headers[key.ToString()] = value.ToString();
+    browseEvent.headers[key.ToString()] = value.ToString();
   }
-  arguments.userGesture = user_gesture;
-  arguments.isRedirect = is_redirect;
-  arguments.transitionType = static_cast<int>(request->GetTransitionType());
-  arguments.resourceType = static_cast<int>(request->GetResourceType());
+  browseEvent.userGesture = user_gesture;
+  browseEvent.isRedirect = is_redirect;
+  browseEvent.transitionType =
+      static_cast<int>(request->GetTransitionType());
+  browseEvent.resourceType = static_cast<int>(request->GetResourceType());
+  arguments.browseEvent = browseEvent;
+
   json jsonArguments = arguments;
   std::optional<UUID> requestId =
       this->SendRpcRequest(browser, "OnBeforeBrowse", jsonArguments);
@@ -473,8 +482,7 @@ void BrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> browser,
   Browser_OnLoadStart arguments;
   arguments.transitionType = static_cast<int>(transition_type);
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnLoadStart", jsonArguments);
+  this->SendRpcRequest(browser, "OnLoadStart", jsonArguments);
 }
 
 void BrowserHandler::OnLoadEnd(CefRefPtr<CefBrowser> browser,
@@ -513,3 +521,115 @@ bool BrowserHandler::OnTooltip(CefRefPtr<CefBrowser> browser,
   this->SendRpcRequest(browser, "OnTooltip", jsonArguments);
   return true;
 }
+
+bool BrowserHandler::CanDownload(CefRefPtr<CefBrowser> browser,
+                                 const CefString& url,
+                                 const CefString& request_method) {
+  Browser_CanDownload arguments;
+  arguments.url = url.ToString();
+  arguments.requestMethod = request_method.ToString();
+  json jsonArguments = arguments;
+  std::optional<UUID> requestId =
+      this->SendRpcRequest(browser, "CanDownload", jsonArguments);
+  if (!requestId.has_value()) {
+    return false;
+  }
+  std::optional<bool> response =
+      browserProcessHandler->WaitForResponse<bool>(requestId.value());
+  return response.value_or(false);
+}
+
+bool BrowserHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                                      CefRefPtr<CefDownloadItem> download_item,
+                                      const CefString& suggested_name,
+                                      CefRefPtr<CefBeforeDownloadCallback> callback) {
+  Browser_OnBeforeDownload arguments;
+  DownloadItem downloadItem;
+  downloadItem.isInProgress = download_item->IsInProgress();
+  downloadItem.isComplete = download_item->IsComplete();
+  downloadItem.isCanceled = download_item->IsCanceled();
+  downloadItem.isInterrupted = download_item->IsInterrupted();
+  downloadItem.isPaused = download_item->IsPaused();
+  downloadItem.interruptReason = download_item->GetInterruptReason();
+  downloadItem.currentSpeed = download_item->GetCurrentSpeed();
+  downloadItem.percentComplete = download_item->GetPercentComplete();
+  downloadItem.totalBytes = download_item->GetTotalBytes();
+  downloadItem.receivedBytes = download_item->GetReceivedBytes();
+  downloadItem.startTime = download_item->GetStartTime();
+  downloadItem.endTime = download_item->GetEndTime();
+  downloadItem.fullPath = download_item->GetFullPath().ToString();
+  downloadItem.id = download_item->GetId();
+  downloadItem.url = download_item->GetURL().ToString();
+  downloadItem.originalUrl = download_item->GetOriginalUrl().ToString();
+  downloadItem.suggestedFileName =
+      download_item->GetSuggestedFileName().ToString();
+  downloadItem.contentDisposition = download_item->GetContentDisposition();
+  downloadItem.mimeType = download_item->GetMimeType();
+  arguments.downloadItem = downloadItem;
+
+  json jsonArguments = arguments;
+  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnBeforeDownload", jsonArguments);
+  if (!requestId.has_value()) {
+    return false;
+  }
+  std::optional<DownloadConfiguration> response =
+      browserProcessHandler->WaitForResponse<DownloadConfiguration>(requestId.value());
+  if (!response.has_value() || !response.value().shouldContinue) {
+    return false;
+  }
+  callback->Continue(response.value().downloadPath, response.value().showDialog);
+  return true;
+}
+
+void BrowserHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                                       CefRefPtr<CefDownloadItem> download_item,
+                                       CefRefPtr<CefDownloadItemCallback> callback) {
+
+  Browser_OnDownloadUpdated arguments;
+  DownloadItem downloadItem;
+  downloadItem.isInProgress = download_item->IsInProgress();
+  downloadItem.isComplete = download_item->IsComplete();
+  downloadItem.isCanceled = download_item->IsCanceled();
+  downloadItem.isInterrupted = download_item->IsInterrupted();
+  downloadItem.isPaused = download_item->IsPaused();
+  downloadItem.interruptReason = download_item->GetInterruptReason();
+  downloadItem.currentSpeed = download_item->GetCurrentSpeed();
+  downloadItem.percentComplete = download_item->GetPercentComplete();
+  downloadItem.totalBytes = download_item->GetTotalBytes();
+  downloadItem.receivedBytes = download_item->GetReceivedBytes();
+  downloadItem.startTime = download_item->GetStartTime();
+  downloadItem.endTime = download_item->GetEndTime();
+  downloadItem.fullPath = download_item->GetFullPath().ToString();
+  downloadItem.id = download_item->GetId();
+  downloadItem.url = download_item->GetURL().ToString();
+  downloadItem.originalUrl = download_item->GetOriginalUrl().ToString();
+  downloadItem.suggestedFileName =
+      download_item->GetSuggestedFileName().ToString();
+  downloadItem.contentDisposition = download_item->GetContentDisposition();
+  downloadItem.mimeType = download_item->GetMimeType();
+  arguments.downloadItem = downloadItem;
+  json jsonArguments = arguments;
+
+  std::optional<UUID> requestId =
+      this->SendRpcRequest(browser, "OnDownloadUpdated", jsonArguments);
+  if (!requestId.has_value()) {
+    callback->Pause();
+    return;
+  }
+  std::optional<std::string> response =
+      browserProcessHandler->WaitForResponse<std::string>(
+          requestId.value());
+  std::string action = response.value_or("pause");
+  if (action == "cancel") {
+    callback->Cancel(); 
+  } else if (action == "pause") {
+    callback->Pause();
+  } else if (action == "resume") {
+    callback->Resume();  
+  } else {
+    browserProcessHandler->SendErrorResponse(
+        requestId.value(), "Unknown download action '" + action + "', defaulting to 'pause'.");
+    callback->Pause();
+  }
+}
+

@@ -822,9 +822,13 @@ template std::optional<std::monostate>
     BrowserProcessHandler::WaitForResponse<std::monostate>(UUID);
 template std::optional<bool>
     BrowserProcessHandler::WaitForResponse<bool>(UUID);
+template std::optional<std::string>
+    BrowserProcessHandler::WaitForResponse<std::string>(UUID);
 template std::optional<CefRect>
     BrowserProcessHandler::WaitForResponse<CefRect>(UUID);
 template std::optional<ContextMenuConfiguration>
     BrowserProcessHandler::WaitForResponse<ContextMenuConfiguration>(UUID);
 template std::optional<CefPoint>
     BrowserProcessHandler::WaitForResponse<CefPoint>(UUID);
+template std::optional<DownloadConfiguration>
+    BrowserProcessHandler::WaitForResponse<DownloadConfiguration>(UUID);

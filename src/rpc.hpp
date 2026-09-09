@@ -126,6 +126,10 @@ inline void from_json(const json& j, CefKeyEvent& m) {
   j.at("focus_on_editable_field").get_to(m.focus_on_editable_field);
 }
 
+inline void to_json(json& j, const CefBaseTime& m) {
+  j = m.val;
+}
+
 // Request messages
 struct RpcRequest {
   UUID id;
@@ -689,7 +693,7 @@ inline void to_json(json& j, const Browser_OnPaint& m) {
   j["sharedMemorySize"] = m.sharedMemorySize;
 }
 
-struct Browser_OnBeforeBrowse {
+struct BrowseEvent {
   std::string url;
   std::string method;
   std::string referrerUrl;
@@ -700,7 +704,7 @@ struct Browser_OnBeforeBrowse {
   int resourceType;
 };
 
-inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
+inline void to_json(json& j, const BrowseEvent& m) {
   j = json::object();
   j["url"] = m.url;
   j["method"] = m.method;
@@ -710,6 +714,17 @@ inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
   j["isRedirect"] = m.isRedirect;
   j["transitionType"] = m.transitionType;
   j["resourceType"] = m.resourceType;
+}
+
+struct Browser_OnBeforeBrowse {
+  std::string browserId;
+  BrowseEvent browseEvent;
+};
+
+inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
+  j = json::object();
+  j["browserId"] = m.browserId;
+  j["browseEvent"] = m.browseEvent;
 }
 
 struct Browser_OnPushState {
@@ -770,6 +785,95 @@ inline void to_json(json& j, const Browser_OnNavigateByKey& m) {
   j["key"] = m.key;
   j["info"] = m.info;
 }
+
+struct Browser_CanDownload {
+  std::string url;
+  std::string requestMethod;
+};
+
+struct DownloadItem {
+  bool isInProgress;
+  bool isComplete;
+  bool isCanceled;
+  bool isInterrupted;
+  bool isPaused;
+  int interruptReason;
+  int currentSpeed;
+  int percentComplete;
+  int totalBytes;
+  int receivedBytes;
+  CefBaseTime startTime;
+  CefBaseTime endTime;
+  std::string fullPath;
+  int id;
+  std::string url;
+  std::string originalUrl;
+  std::string suggestedFileName;
+  std::string contentDisposition;
+  std::string mimeType;
+};
+
+inline void to_json(json& j, const DownloadItem& m) {
+  j = json::object();
+  j["isInProgress"] = m.isInProgress;
+  j["isComplete"] = m.isComplete;
+  j["isCanceled"] = m.isCanceled;
+  j["isInterrupted"] = m.isInterrupted;
+  j["isPaused"] = m.isPaused;
+  j["interruptReason"] = m.interruptReason;
+  j["currentSpeed"] = m.currentSpeed;
+  j["percentComplete"] = m.percentComplete;
+  j["totalBytes"] = m.totalBytes;
+  j["receivedBytes"] = m.receivedBytes;
+  j["startTime"] = m.startTime;
+  j["endTime"] = m.endTime;
+  j["fullPath"] = m.fullPath;
+  j["id"] = m.id;
+  j["url"] = m.url;
+  j["originalUrl"] = m.originalUrl;
+  j["suggestedFileName"] = m.suggestedFileName;
+  j["contentDisposition"] = m.contentDisposition;
+  j["mimeType"] = m.mimeType;
+}
+
+inline void to_json(json& j, const Browser_CanDownload& m) {
+  j = json::object();
+  j["url"] = m.url;
+  j["requestMethod"] = m.requestMethod;
+}
+
+struct Browser_OnBeforeDownload {
+  DownloadItem downloadItem;
+};
+
+inline void to_json(json& j, const Browser_OnBeforeDownload& m) {
+  j = json::object();
+  j["downloadItem"] = m.downloadItem;
+}
+
+struct Browser_OnDownloadUpdated {
+  DownloadItem downloadItem;
+};
+
+inline void to_json(json& j, const Browser_OnDownloadUpdated& m) {
+  j = json::object();
+  j["downloadItem"] = m.downloadItem;
+}
+
+struct DownloadConfiguration {
+  bool shouldContinue;
+  std::string downloadPath;
+  bool showDialog;
+};
+
+
+inline void from_json(const json& j, DownloadConfiguration& m) {
+  j.at("shouldContinue").get_to(m.shouldContinue);
+  j.at("downloadPath").get_to(m.downloadPath);
+  j.at("showDialog").get_to(m.showDialog);
+}
+
+enum DownloadAction { DOWNLOAD_CANCEL, DOWNLOAD_PAUSE, DOWNLOAD_RESUME };
 
 struct Client_CreateNetworkRequest {
   std::string url;
@@ -839,3 +943,4 @@ inline void to_json(json& j, const HttpClient_OnError& m) {
   j["requestStatus"] = m.requestStatus;
   j["errorCode"] = m.errorCode;
 }
+

@@ -20,7 +20,8 @@ class BrowserHandler : public CefClient,
                        CefLifeSpanHandler,
                        CefRequestHandler,
                        CefContextMenuHandler,
-                       CefLoadHandler {
+                       CefLoadHandler,
+                       CefDownloadHandler {
  public:
   BrowserHandler(BrowserProcessHandler* browserProcessHandler,
                  CefRect pageRectangle);
@@ -40,6 +41,7 @@ class BrowserHandler : public CefClient,
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override;
   CefRefPtr<CefRequestHandler> GetRequestHandler() override;
   CefRefPtr<CefLoadHandler> GetLoadHandler() override;
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override;
   bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                 CefRefPtr<CefFrame> frame,
                                 CefProcessId source_process,
@@ -155,6 +157,20 @@ class BrowserHandler : public CefClient,
                    ErrorCode errorCode,
                    const CefString& errorText,
                    const CefString& failedUrl) override;
+
+  // CefDownloadHandler:
+  bool CanDownload(CefRefPtr<CefBrowser> browser,
+                   const CefString& url,
+                   const CefString& request_method) override;
+
+  bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefDownloadItem> download_item,
+                        const CefString& suggested_name,
+                        CefRefPtr<CefBeforeDownloadCallback> callback) override;
+
+  void OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefDownloadItem> download_item,
+                         CefRefPtr<CefDownloadItemCallback> callback) override;
 
  private:
   using TimePoint = std::chrono::steady_clock::time_point;
