@@ -561,6 +561,14 @@ inline void to_json(json& j, const Browser_OnOpenUrlFromTab& m) {
   j["userGesture"] = m.userGesture;
 }
 
+struct Browser_StartDownload {
+  std::string url;
+};
+
+inline void from_json(const json& j, Browser_StartDownload& m) {
+  j.at("url").get_to(m.url);
+}
+
 struct Browser_DownloadImage {
   std::string imageUrl;
   bool isFavicon;

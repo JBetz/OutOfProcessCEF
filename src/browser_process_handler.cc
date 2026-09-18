@@ -584,6 +584,12 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       return;
     }
 
+    if (request.methodName == "StartDownload") {
+      Browser_StartDownload arguments = request.arguments.get<Browser_StartDownload>();
+      browser->GetHost()->StartDownload(arguments.url);
+      return;
+   }
+
     if (request.methodName == "DownloadImage") {
       Browser_DownloadImage arguments =
           request.arguments.get<Browser_DownloadImage>();
