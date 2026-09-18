@@ -693,7 +693,7 @@ inline void to_json(json& j, const Browser_OnPaint& m) {
   j["sharedMemorySize"] = m.sharedMemorySize;
 }
 
-struct BrowseEvent {
+struct Browser_OnBeforeBrowse {
   std::string url;
   std::string method;
   std::string referrerUrl;
@@ -704,7 +704,7 @@ struct BrowseEvent {
   int resourceType;
 };
 
-inline void to_json(json& j, const BrowseEvent& m) {
+inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
   j = json::object();
   j["url"] = m.url;
   j["method"] = m.method;
@@ -714,17 +714,6 @@ inline void to_json(json& j, const BrowseEvent& m) {
   j["isRedirect"] = m.isRedirect;
   j["transitionType"] = m.transitionType;
   j["resourceType"] = m.resourceType;
-}
-
-struct Browser_OnBeforeBrowse {
-  std::string browserId;
-  BrowseEvent browseEvent;
-};
-
-inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
-  j = json::object();
-  j["browserId"] = m.browserId;
-  j["browseEvent"] = m.browseEvent;
 }
 
 struct Browser_OnPushState {

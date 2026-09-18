@@ -355,22 +355,19 @@ bool BrowserHandler::OnBeforeBrowse(
     bool user_gesture,
     bool is_redirect) {
   Browser_OnBeforeBrowse arguments;
-  arguments.browserId = browser->GetIdentifier();
-  BrowseEvent browseEvent;
-  browseEvent.url = request->GetURL().ToString();
-  browseEvent.method = request->GetMethod().ToString();
-  browseEvent.referrerUrl = request->GetReferrerURL().ToString();
+  arguments.url = request->GetURL().ToString();
+  arguments.method = request->GetMethod().ToString();
+  arguments.referrerUrl = request->GetReferrerURL().ToString();
   CefRequest::HeaderMap headerMap;
   request->GetHeaderMap(headerMap);
   for (const auto& [key, value] : headerMap) {
-    browseEvent.headers[key.ToString()] = value.ToString();
+    arguments.headers[key.ToString()] = value.ToString();
   }
-  browseEvent.userGesture = user_gesture;
-  browseEvent.isRedirect = is_redirect;
-  browseEvent.transitionType =
+  arguments.userGesture = user_gesture;
+  arguments.isRedirect = is_redirect;
+  arguments.transitionType =
       static_cast<int>(request->GetTransitionType());
-  browseEvent.resourceType = static_cast<int>(request->GetResourceType());
-  arguments.browseEvent = browseEvent;
+  arguments.resourceType = static_cast<int>(request->GetResourceType());
 
   json jsonArguments = arguments;
   std::optional<UUID> requestId =
