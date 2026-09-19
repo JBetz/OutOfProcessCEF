@@ -565,7 +565,17 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
     if (request.methodName == "OnKeyboardEvent") {
       Browser_OnKeyboardEvent arguments =
           request.arguments.get<Browser_OnKeyboardEvent>();
-      browser->GetHost()->SendKeyEvent(arguments.event);
+      CefKeyEvent event;
+      event.size = 28;
+      event.type = arguments.type;
+      event.modifiers = arguments.modifiers;
+      event.windows_key_code = arguments.windowsKeyCode;
+      event.native_key_code = arguments.nativeKeyCode;
+      event.is_system_key = arguments.isSystemKey;
+      event.character = arguments.character;
+      event.unmodified_character = arguments.unmodifiedCharacter;
+      event.focus_on_editable_field = arguments.focusOnEditableField;
+      browser->GetHost()->SendKeyEvent(event);
       return;
     }
 

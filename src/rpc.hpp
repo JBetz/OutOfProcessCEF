@@ -224,11 +224,28 @@ inline void from_json(const json& j, Browser_OnMouseWheel& m) {
 }
 
 struct Browser_OnKeyboardEvent {
-  CefKeyEvent event;
+  cef_key_event_type_t type;
+  uint32_t modifiers;
+  int windowsKeyCode;
+  int nativeKeyCode;
+  int isSystemKey;
+  char16_t character;
+  char16_t unmodifiedCharacter;
+  int focusOnEditableField;
 };
 
 inline void from_json(const json& j, Browser_OnKeyboardEvent& m) {
-  j.at("event").get_to(m.event);
+  j.at("type").get_to(m.type);
+  j.at("modifiers").get_to(m.modifiers);
+  j.at("windowsKeyCode").get_to(m.windowsKeyCode);
+  j.at("nativeKeyCode").get_to(m.nativeKeyCode);
+  j.at("isSystemKey").get_to(m.isSystemKey);
+  std::string character = j.at("character");
+  m.character = character.empty() ? 0 : character[0];
+  std::string unmodifiedCharacter = j.at("unmodifiedCharacter");
+  m.unmodifiedCharacter =
+      unmodifiedCharacter.empty() ? 0 : unmodifiedCharacter[0];
+  j.at("focusOnEditableField").get_to(m.focusOnEditableField);
 }
 
 struct Browser_OnMouseOver {
