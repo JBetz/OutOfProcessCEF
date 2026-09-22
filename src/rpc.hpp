@@ -228,10 +228,10 @@ struct Browser_OnKeyboardEvent {
   uint32_t modifiers;
   int windowsKeyCode;
   int nativeKeyCode;
-  int isSystemKey;
-  char16_t character;
-  char16_t unmodifiedCharacter;
-  int focusOnEditableField;
+  bool isSystemKey;
+  std::optional<std::string> character;
+  std::optional<std::string> unmodifiedCharacter;
+  bool focusOnEditableField;
 };
 
 inline void from_json(const json& j, Browser_OnKeyboardEvent& m) {
@@ -240,11 +240,8 @@ inline void from_json(const json& j, Browser_OnKeyboardEvent& m) {
   j.at("windowsKeyCode").get_to(m.windowsKeyCode);
   j.at("nativeKeyCode").get_to(m.nativeKeyCode);
   j.at("isSystemKey").get_to(m.isSystemKey);
-  std::string character = j.at("character");
-  m.character = character.empty() ? 0 : character[0];
-  std::string unmodifiedCharacter = j.at("unmodifiedCharacter");
-  m.unmodifiedCharacter =
-      unmodifiedCharacter.empty() ? 0 : unmodifiedCharacter[0];
+  j.at("character").get_to(m.character);
+  j.at("unmodifiedCharacter").get_to(m.unmodifiedCharacter);
   j.at("focusOnEditableField").get_to(m.focusOnEditableField);
 }
 

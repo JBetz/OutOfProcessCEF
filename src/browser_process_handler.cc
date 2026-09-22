@@ -572,9 +572,15 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       event.windows_key_code = arguments.windowsKeyCode;
       event.native_key_code = arguments.nativeKeyCode;
       event.is_system_key = arguments.isSystemKey;
-      event.character = arguments.character;
-      event.unmodified_character = arguments.unmodifiedCharacter;
-      event.focus_on_editable_field = arguments.focusOnEditableField;
+      event.character = 0;
+      if (arguments.character.has_value()) {
+        event.character = arguments.character.value()[0];
+      }
+      event.unmodified_character = 0;
+      if (arguments.unmodifiedCharacter.has_value()) {
+        event.unmodified_character = arguments.unmodifiedCharacter.value()[0];
+      }
+      event.focus_on_editable_field = arguments.focusOnEditableField ? 1 : 0;
       browser->GetHost()->SendKeyEvent(event);
       return;
     }
