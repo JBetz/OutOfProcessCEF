@@ -626,6 +626,14 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       return;
     }
 
+    if (request.methodName == "GetText") {
+      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+      CefRefPtr<GetSourceStringVisitor> visitor =
+          new GetSourceStringVisitor(this, request.id);
+      frame->GetText(visitor);
+      return;
+    }
+
     if (request.methodName == "GetFrameRate") {
       CefPostTask(TID_UI,
                   base::BindOnce(&BrowserProcessHandler::Browser_GetFrameRateRpc,
