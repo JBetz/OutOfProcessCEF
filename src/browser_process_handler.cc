@@ -429,7 +429,7 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       return;
     }
 
-    if (request.methodName == "EvalJavaScript") {
+    if (request.methodName == "EvaluateJavaScript") {
       CefRefPtr<CefFrame> frame = browser->GetMainFrame();
       CefRefPtr<CefProcessMessage> message =
           CefProcessMessage::Create(kEvalMessage);
