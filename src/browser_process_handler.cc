@@ -249,13 +249,11 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
 
   CefRefPtr<BrowserHandler> handler = new BrowserHandler(this, rectangle);
 
-  CefRefPtr<CefRequestContext> requestContext = nullptr;
-  if (private_) {
-    requestContext =
-        CefRequestContext::CreateContext(CefRequestContextSettings(), nullptr);
-  }
-  CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(
-      windowInfo, handler, url, browserSettings, extraInfo, requestContext);
+  CefRefPtr<CefRequestContext> requestContext =
+      private_ ? CefRequestContext::CreateContext(CefRequestContextSettings(),
+                                                  nullptr)
+               : CefRequestContext::GetGlobalContext();
+  CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(windowInfo, handler, url, browserSettings, extraInfo, requestContext);
 
   int browserId = -1;
   if (browser) {
