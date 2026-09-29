@@ -32,7 +32,7 @@ public:
   void HandleRpcResponse(RpcResponse response);
 
   // Incoming RPC messages.
-  void Client_CreateBrowserRpc(const UUID& requestId, const CefString& url, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated);
+  void Client_CreateBrowserRpc(const UUID& requestId, const CefString& url, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated, bool private_);
   void Client_CreateHttpRequestRpc(const UUID& requestId, Client_CreateHttpRequest args);
   void Client_ShutdownRpc();
   void Browser_CloseRpc(const CefRefPtr<CefBrowser> browser, bool forceClose);

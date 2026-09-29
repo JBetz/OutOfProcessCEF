@@ -231,7 +231,8 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
                                                     const CefRect& rectangle,
                                                     HWND parentWindowHandle,
                                                     bool windowless,
-                                                    bool hardwareAccelerated) {
+                                                    bool hardwareAccelerated,
+                                                    bool private_) {
   CefWindowInfo windowInfo;
   if (windowless) {
     windowInfo.SetAsWindowless(parentWindowHandle);  // no OS parent 
@@ -244,12 +245,15 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
   CefBrowserSettings browserSettings;
   browserSettings.windowless_frame_rate = 30;
 
-  CefRefPtr<CefRequestContext> requestContext =
-      CefRequestContext::CreateContext(CefRequestContextSettings(), nullptr);
   CefRefPtr<CefDictionaryValue> extraInfo = CefDictionaryValue::Create();
 
   CefRefPtr<BrowserHandler> handler = new BrowserHandler(this, rectangle);
 
+  CefRefPtr<CefRequestContext> requestContext = nullptr;
+  if (private_) {
+    requestContext =
+        CefRequestContext::CreateContext(CefRequestContextSettings(), nullptr);
+  }
   CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(
       windowInfo, handler, url, browserSettings, extraInfo, requestContext);
 
@@ -390,7 +394,7 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       CefPostTask(
           TID_UI,
           base::BindOnce(&BrowserProcessHandler::Client_CreateBrowserRpc, this,
-                         request.id, arguments.url, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated));
+                         request.id, arguments.url, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated, arguments.private_));
       return;
     }
 

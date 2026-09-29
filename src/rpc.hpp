@@ -164,6 +164,7 @@ struct Client_CreateBrowser {
   uintptr_t parentWindowHandle;
   bool windowless;
   bool hardwareAccelerated;
+  bool private_;
 };
 
 inline void from_json(const json& j, Client_CreateBrowser& m) {
@@ -173,6 +174,7 @@ inline void from_json(const json& j, Client_CreateBrowser& m) {
   j.at("parentWindowHandle").get_to(m.parentWindowHandle);
   j.at("windowless").get_to(m.windowless);
   j.at("hardwareAccelerated").get_to(m.hardwareAccelerated);
+  j.at("private").get_to(m.private_);
 }
 
 struct Browser_EvalJavaScript {
