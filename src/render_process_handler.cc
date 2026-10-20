@@ -129,25 +129,20 @@ class MessageHandler : public CefV8Handler {
       CefRefPtr<CefV8Value> window = context->GetGlobal();
       CefRefPtr<CefFrame> frame = context->GetFrame();
       CefRefPtr<CefV8Value> event = arguments.front();
+   
+      RpcRequest request;
+      request.id = CreateUuid();
+      request.className = "Browser";
+      request.methodName = "OnMessage";
+      request.instanceId = frame->GetBrowser()->GetIdentifier();
+      json requestArguments = json::object();
+      requestArguments["event"] = CefV8ValueToJson(event);
+      request.arguments = requestArguments;
+      json jsonRequest = request;
 
       CefRefPtr<CefProcessMessage> message =
           CefProcessMessage::Create(kOnMessageMessage);
-
-      CefRefPtr<CefDictionaryValue> messageArguments =
-          CefDictionaryValue::Create();
-      CefString source = event->GetValue("source")->GetStringValue();
-      messageArguments->SetString("source", source);
-      CefRefPtr<CefV8Value> data = event->GetValue("data");
-
-      CefRefPtr<CefV8Value> json = window->GetValue("JSON");
-      CefRefPtr<CefV8Value> stringifyFunction = json->GetValue("stringify");
-      CefV8ValueList stringifyArguments;
-      stringifyArguments.push_back(data);
-      const CefString& stringifiedData =
-          stringifyFunction->ExecuteFunction(json, stringifyArguments)
-              ->GetStringValue();
-      messageArguments->SetString("data", stringifiedData);
-      message->GetArgumentList()->SetDictionary(0, messageArguments);
+      message->GetArgumentList()->SetString(0, jsonRequest.dump());
       frame->SendProcessMessage(PID_BROWSER, message);
       return true;
   }
@@ -536,15 +531,7 @@ class PromiseThenHandler : public CefV8Handler {
     if (name != "onPromiseResolved" || arguments.size() == 0) {
       return false;
     }
-    CefRefPtr<CefV8Context> context = frame->GetV8Context();
-    CefRefPtr<CefV8Value> window = context->GetGlobal();
-    CefRefPtr<CefV8Value> jsonObject = window->GetValue("JSON");
-    CefRefPtr<CefV8Value> stringifyFunction = jsonObject->GetValue("stringify");
-    CefV8ValueList stringifyArguments;
-    stringifyArguments.push_back(arguments[0]);
-    const CefString& result =
-        stringifyFunction->ExecuteFunction(jsonObject, stringifyArguments)
-            ->GetStringValue();
+
     CefRefPtr<CefProcessMessage> responseMessage =
         CefProcessMessage::Create(kOnEvalMessage);
     CefRefPtr<CefDictionaryValue> messageArguments =
@@ -552,7 +539,7 @@ class PromiseThenHandler : public CefV8Handler {
     RpcResponse response;
     response.requestId = messageId;
     response.success = true;
-    response.returnValue = result.ToString();
+    response.returnValue = CefV8ValueToJson(arguments[0]);
     json jsonResponse = response;
     responseMessage->GetArgumentList()->SetString(0, jsonResponse.dump());
     frame->SendProcessMessage(sourceProcessId, responseMessage);
@@ -600,16 +587,7 @@ bool RenderProcessHandler::OnProcessMessageReceived(
       response.requestId = request.id;
       response.success = success;
       if (success) {
-        CefRefPtr<CefV8Value> window = context->GetGlobal();
-        CefRefPtr<CefV8Value> jsonObj = window->GetValue("JSON");
-        CefRefPtr<CefV8Value> stringifyFunction =
-            jsonObj->GetValue("stringify");
-        CefV8ValueList stringifyArguments;
-        stringifyArguments.push_back(retval);
-        const CefString& result =
-            stringifyFunction->ExecuteFunction(jsonObj, stringifyArguments)
-                ->GetStringValue();
-        response.returnValue = result.ToString();
+        response.returnValue = CefV8ValueToJson(retval);
       } else {
         EvalJavaScriptError error;
         error.endColumn = exception->GetEndColumn();

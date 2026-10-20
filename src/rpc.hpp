@@ -5,7 +5,9 @@
 #include <string>
 #include <variant>
 #include "include/internal/cef_types_wrappers.h"
+#include "include/cef_v8.h"
 #include "json.hpp"
+#include <unordered_set>
 
 using json = nlohmann::json;
 
@@ -957,3 +959,82 @@ inline void to_json(json& j, const HttpClient_OnError& m) {
   j["errorCode"] = m.errorCode;
 }
 
+inline json CefV8ValueToJson(CefRefPtr<CefV8Value> value,
+                             std::vector<CefRefPtr<CefV8Value>>& visited_stack,
+                             int max_depth = 64) {
+  if (!value || !value->IsValid() || value->IsNull() || value->IsUndefined()) {
+    return nullptr;
+  }
+
+  // Handle Primitives
+  if (value->IsBool()) {
+    return value->GetBoolValue();
+  }
+  if (value->IsInt() || value->IsUInt()) {
+    return value->GetIntValue();
+  }
+  if (value->IsDouble()) {
+    return value->GetDoubleValue();
+  }
+  if (value->IsString()) {
+    return value->GetStringValue().ToString();
+  }
+  if (value->IsDate()) {
+    return value->GetDateValue().val;
+  }
+
+  // Prevent stack overflow on excessively nested structures
+  if (static_cast<int>(visited_stack.size()) >= max_depth) {
+    return nullptr;
+  }
+
+  // Circular reference check: check if the object is already in the ancestor
+  // chain
+  if (value->IsObject() || value->IsArray()) {
+    for (const auto& visited : visited_stack) {
+      if (value->IsSame(visited)) {
+        // Circular reference detected; serialize as null (or omit)
+        return nullptr;
+      }
+    }
+  }
+
+  // Push current object onto the ancestor stack
+  visited_stack.push_back(value);
+  json result = nullptr;
+
+  // Handle Arrays
+  if (value->IsArray()) {
+    result = json::array();
+    int length = value->GetArrayLength();
+    for (int i = 0; i < length; ++i) {
+      result.push_back(
+          CefV8ValueToJson(value->GetValue(i), visited_stack, max_depth));
+    }
+  }
+
+  // Handle Objects
+  if (value->IsObject()) {
+    result = json::object();
+    std::vector<CefString> keys;
+    if (value->GetKeys(keys)) {
+      for (const auto& key : keys) {
+        CefRefPtr<CefV8Value> child = value->GetValue(key);
+        // Exclude functions and invalid properties
+        if (child && !child->IsFunction()) {
+          result[key.ToString()] =
+              CefV8ValueToJson(child, visited_stack, max_depth);
+        }
+      }
+    }
+  }
+
+  visited_stack.pop_back();
+  return result;
+}
+
+// Convenient overload for initial call
+inline json CefV8ValueToJson(CefRefPtr<CefV8Value> value, int max_depth = 64) {
+  std::vector<CefRefPtr<CefV8Value>> visited_stack;
+  return CefV8ValueToJson(value, visited_stack, max_depth);
+}
