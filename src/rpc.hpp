@@ -742,6 +742,19 @@ inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
   j["resourceType"] = m.resourceType;
 }
 
+struct Browser_OnRenderProcessTerminated {
+  int status;
+  int errorCode;
+  std::string errorString;
+};
+
+inline void to_json(json& j, const Browser_OnRenderProcessTerminated& m) {
+  j = json::object();
+  j["status"] = m.status;
+  j["errorCode"] = m.errorCode;
+  j["errorString"] = m.errorString;
+}
+
 struct Browser_OnPushState {
   std::string state;
   std::string url;

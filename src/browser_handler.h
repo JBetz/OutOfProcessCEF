@@ -121,6 +121,10 @@ class BrowserHandler : public CefClient,
       const CefString& target_url,
       CefLifeSpanHandler::WindowOpenDisposition target_disposition,
       bool user_gesture) override;
+  void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser, TerminationStatus status, int error_code, const CefString& error_string) override;
+  bool OnRenderProcessUnresponsive(CefRefPtr<CefBrowser> browser, CefRefPtr<CefUnresponsiveProcessCallback> callback) override;
+  void OnRenderViewReady(CefRefPtr<CefBrowser> browser) override;
 
   // CefContextMenuHandler:
   void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,

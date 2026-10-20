@@ -401,6 +401,40 @@ bool BrowserHandler::OnOpenURLFromTab(
   return result.value_or(true);
 }
 
+void BrowserHandler::OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) {
+  this->SendRpcRequest(browser, "OnRenderProcessResponsive");
+}
+
+void BrowserHandler::OnRenderProcessTerminated(
+    CefRefPtr <CefBrowser> browser,
+    TerminationStatus status,
+    int error_code,
+    const CefString& error_string) {
+  Browser_OnRenderProcessTerminated arguments;
+  arguments.status = static_cast<int>(status);
+  arguments.errorCode = error_code;
+  arguments.errorString = error_string.ToString();
+  json jsonArguments = arguments;
+  this->SendRpcRequest(browser, "OnRenderProcessTerminated", jsonArguments);
+}
+
+bool BrowserHandler::OnRenderProcessUnresponsive(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefUnresponsiveProcessCallback> callback) {
+  std::optional<UUID> requestId =
+      this->SendRpcRequest(browser, "OnRenderProcessUnresponsive");
+  if (!requestId.has_value()) {
+    return true;
+  }
+  std::optional<bool> result =
+      browserProcessHandler->WaitForResponse<bool>(requestId.value());
+  return result.value_or(true);
+}
+
+void BrowserHandler::OnRenderViewReady(CefRefPtr<CefBrowser> browser) {
+  this->SendRpcRequest(browser, "OnRenderViewReady");
+}
+
 void BrowserHandler::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefFrame> frame,
                                          CefRefPtr<CefContextMenuParams> params,
