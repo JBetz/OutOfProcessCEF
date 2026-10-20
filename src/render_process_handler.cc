@@ -125,26 +125,27 @@ class MessageHandler : public CefV8Handler {
                        const CefV8ValueList& arguments,
                        CefRefPtr<CefV8Value>& retval,
                        CefString& exception) override {
-      CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
-      CefRefPtr<CefV8Value> window = context->GetGlobal();
-      CefRefPtr<CefFrame> frame = context->GetFrame();
-      CefRefPtr<CefV8Value> event = arguments.front();
-   
-      RpcRequest request;
-      request.id = CreateUuid();
-      request.className = "Browser";
-      request.methodName = "OnMessage";
-      request.instanceId = frame->GetBrowser()->GetIdentifier();
-      json requestArguments = json::object();
-      requestArguments["event"] = CefV8ValueToJson(event);
-      request.arguments = requestArguments;
-      json jsonRequest = request;
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefV8Value> window = context->GetGlobal();
+    CefRefPtr<CefFrame> frame = context->GetFrame();
+    CefRefPtr<CefV8Value> event = arguments.front();
 
-      CefRefPtr<CefProcessMessage> message =
-          CefProcessMessage::Create(kOnMessageMessage);
-      message->GetArgumentList()->SetString(0, jsonRequest.dump());
-      frame->SendProcessMessage(PID_BROWSER, message);
-      return true;
+    RpcRequest request;
+    request.id = CreateUuid();
+    request.className = "Browser";
+    request.methodName = "OnMessage";
+    request.instanceId = frame->GetBrowser()->GetIdentifier();
+    json eventArguments = json ::object();
+    eventArguments["data"] = CefV8ValueToJson(event->GetValue("data"));
+    json requestArguments = json::object();
+    requestArguments["event"] = eventArguments;
+    request.arguments = requestArguments;
+    json jsonRequest = request;
+    CefRefPtr<CefProcessMessage> message =
+        CefProcessMessage::Create(kOnMessageMessage);
+    message->GetArgumentList()->SetString(0, jsonRequest.dump());
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
   }
 
   // Provide the reference counting implementation for this class.
