@@ -87,6 +87,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
               .c_str());
 
   if (process_type == ProcessHandler::BrowserProcess) {
+    const std::string& server_port_str =
+        command_line->GetSwitchValue(switches::kServerPort);
     const std::string& application_process_id_str =
         command_line->GetSwitchValue(switches::kApplicationProcessId);
     const std::string& application_message_window_handle_str =
@@ -94,6 +96,10 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     const std::string& window_message_id_str =
         command_line->GetSwitchValue(switches::kWindowMessageId);
 
+    if (server_port_str.empty()) {
+      SDL_Log("ERROR: --server-port is required");
+      return 1;
+    }
     if (application_process_id_str.empty()) {
       SDL_Log("ERROR: --application-process-id is required");
       return 1;
@@ -107,6 +113,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
       return 1;
     }
 
+    int serverPort = std::stoi(server_port_str);
     int applicationProcessId = std::stoi(application_process_id_str);
     HANDLE applicationProcessHandle =
         OpenProcess(PROCESS_DUP_HANDLE, FALSE, applicationProcessId);
@@ -121,7 +128,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 
     int windowMessageId = std::stoi(window_message_id_str);
 
-    handler = new BrowserProcessHandler(applicationProcessHandle,
+    handler = new BrowserProcessHandler(serverPort,
+                                        applicationProcessHandle,
                                         applicationMessageWindowHandle,
                                         windowMessageId);
   } else if (process_type == ProcessHandler::RendererProcess) {

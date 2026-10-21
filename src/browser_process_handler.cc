@@ -101,10 +101,12 @@ class GetSourceStringVisitor : public CefStringVisitor {
 };
 
 BrowserProcessHandler::BrowserProcessHandler(
+    int serverPort,
     HANDLE applicationProcessHandle,
     HWND applicationMessageWindowHandle,
     int windowMessageId)
-    : applicationProcessHandle(applicationProcessHandle),
+    : serverPort(serverPort),
+      applicationProcessHandle(applicationProcessHandle),
       applicationMessageWindowHandle(applicationMessageWindowHandle),
       windowMessageId(windowMessageId),
       outgoingMessageQueue(),
@@ -178,13 +180,13 @@ void BrowserProcessHandler::OnContextInitialized() {
     abort();
   }
 
-  socketServer = NET_CreateServer(NULL, 3000);
+  socketServer = NET_CreateServer(NULL, serverPort);
   if (socketServer == NULL) {
     SDL_Log(SDL_GetError());
     abort();
   }
 
-  SDL_Log("Server started on port 3000");
+  SDL_Log("Server started on port %d", serverPort);
 
   // Signal that the server is ready, then block until a client connects.
   HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, L"ChromiumSocketReady");

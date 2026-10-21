@@ -48,6 +48,7 @@ extern const char kUseWindowModalDialog[];
 extern const char kUseBottomControls[];
 extern const char kHidePipFrame[];
 extern const char kHideChromeBubbles[];
+extern const char kServerPort[];
 extern const char kApplicationProcessId[];
 extern const char kApplicationMessageWindowHandle[];
 extern const char kWindowMessageId[];

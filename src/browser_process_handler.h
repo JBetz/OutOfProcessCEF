@@ -11,7 +11,7 @@ class BrowserHandler;
 
 class BrowserProcessHandler : public ProcessHandler, public CefBrowserProcessHandler {
 public:
- BrowserProcessHandler(HANDLE applicationProcessHandle, HWND applicationMessageWindowHandle, int windowMessageId);
+ BrowserProcessHandler(int serverPort, HANDLE applicationProcessHandle, HWND applicationMessageWindowHandle, int windowMessageId);
  ~BrowserProcessHandler();
 
  // Accessors.
@@ -52,6 +52,7 @@ public:
   static int RpcSendThread(void* browserProcessHandlerPtr);
 
  private:
+  int serverPort;
   HANDLE applicationProcessHandle;
   HWND applicationWindowHandle;
   HWND applicationMessageWindowHandle;
