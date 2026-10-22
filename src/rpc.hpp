@@ -45,16 +45,21 @@ inline UUID CreateUuid() {
   }
 }
 
-inline void to_json(json& j, const UUID& m) {
+inline std::string uuid_to_string(const UUID& m) {
   RPC_CSTR str;
   RPC_STATUS resultCode = UuidToStringA(const_cast<UUID*>(&m), &str);
   if (resultCode == RPC_S_OK) {
-    j = std::string(reinterpret_cast<char*>(str));
+    std::string result = std::string(reinterpret_cast<char*>(str));
     RpcStringFreeA(&str);
+    return result;
   } else {
     throw std::runtime_error("UuidToStringA() failed with error code: " +
                              std::to_string(resultCode));
   }
+}
+
+inline void to_json(json& j, const UUID& m) {
+  j = uuid_to_string(m);
 }
 
 inline void from_json(const json& j, UUID& m) {
