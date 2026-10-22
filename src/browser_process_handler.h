@@ -9,6 +9,8 @@
 
 class BrowserHandler;
 
+using PendingCallback = std::function<void(const json&)>;
+
 class BrowserProcessHandler : public ProcessHandler, public CefBrowserProcessHandler {
 public:
  BrowserProcessHandler(int serverPort, HANDLE applicationProcessHandle, HWND applicationMessageWindowHandle, int windowMessageId);
@@ -30,9 +32,11 @@ public:
   // RPC handling.
   void HandleRpcRequest(RpcRequest request);
   void HandleRpcResponse(RpcResponse response);
+  void RegisterPendingCallback(const UUID& requestId, PendingCallback callback);
+  void CancelPendingCallback(const UUID& requestId);
 
   // Incoming RPC messages.
-  void Client_CreateBrowserRpc(const UUID& requestId, const CefString& url, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated, bool private_);
+  void Client_CreateBrowserRpc(const UUID& requestId, const CefString& url, const CefPoint& windowOrigin, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated, bool private_);
   void Client_CreateHttpRequestRpc(const UUID& requestId, Client_CreateHttpRequest args);
   void Client_ShutdownRpc();
   void Browser_CloseRpc(const CefRefPtr<CefBrowser> browser, bool forceClose);
@@ -45,7 +49,6 @@ public:
   void SendMessage(std::string payload);
   void SendErrorResponse(const UUID& requestId, std::string message);
   void SendLogMessage(const SDL_LogPriority level, const std::string& message);
-  template<typename T> std::optional<T> WaitForResponse(UUID id);
 
   // RPC threads, need to be static.
   static int RpcReceiveThread(void* browserProcessHandlerPtr);
@@ -58,8 +61,8 @@ public:
   HWND applicationMessageWindowHandle;
   int windowMessageId;
   ThreadSafeQueue<std::string> outgoingMessageQueue;
-  SDL_Mutex* responseMapMutex = nullptr;
-  std::map<UUID, std::unique_ptr<ResponseEntry>> responseEntries;
+  SDL_Mutex* pendingCallbacksMutex = nullptr;
+  std::map<UUID, PendingCallback> pendingCallbacks;
   std::map<int, std::pair<CefRefPtr<BrowserHandler>, CefRefPtr<CefBrowser>>> browserEntries;
   std::map<int, CefRefPtr<CefURLRequest>> httpRequestEntries;
   int nextHttpRequestId = 1;

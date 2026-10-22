@@ -110,15 +110,15 @@ BrowserProcessHandler::BrowserProcessHandler(
       applicationMessageWindowHandle(applicationMessageWindowHandle),
       windowMessageId(windowMessageId),
       outgoingMessageQueue(),
-      responseMapMutex(SDL_CreateMutex()),
+      pendingCallbacksMutex(SDL_CreateMutex()),
       socketServer(NULL),
       browserEntries(),
       isShuttingDown(false),
       streamSocket(nullptr) {}
 
 BrowserProcessHandler::~BrowserProcessHandler() {
-  SDL_DestroyMutex(responseMapMutex);
-  responseMapMutex = nullptr;
+  SDL_DestroyMutex(pendingCallbacksMutex);
+  pendingCallbacksMutex = nullptr;
 }
 
 NET_Server* BrowserProcessHandler::GetSocketServer() {
@@ -200,7 +200,7 @@ void BrowserProcessHandler::OnContextInitialized() {
   }
   CloseHandle(hEvent);
 
-  // Wait for a client to connect before spawning I/O threads.
+    // Wait for a client to connect before spawning I/O threads.
   void* waitSockets[] = {static_cast<void*>(socketServer)};
   NET_WaitUntilInputAvailable(waitSockets, 1, -1);
 
@@ -230,6 +230,7 @@ void BrowserProcessHandler::OnContextInitialized() {
 
 void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
                                                     const CefString& url,
+                                                    const CefPoint& windowOrigin,
                                                     const CefRect& rectangle,
                                                     HWND parentWindowHandle,
                                                     bool windowless,
@@ -249,20 +250,20 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
 
   CefRefPtr<CefDictionaryValue> extraInfo = CefDictionaryValue::Create();
 
-  CefRefPtr<BrowserHandler> handler = new BrowserHandler(this, rectangle);
+  CefRefPtr<BrowserHandler> handler = new BrowserHandler(this, windowOrigin, rectangle);
 
   CefRefPtr<CefRequestContext> requestContext =
       private_ ? CefRequestContext::CreateContext(CefRequestContextSettings(),
                                                   nullptr)
                : CefRequestContext::GetGlobalContext();
   CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(windowInfo, handler, url, browserSettings, extraInfo, requestContext);
-
+  
   int browserId = -1;
   if (browser) {
     browserId = browser->GetIdentifier();
     browserEntries[browserId] = {handler, browser};
     SDL_Log("Created browser on UI thread; id=%d url=%s", browserId,
-            url.c_str());
+            url.ToString().c_str());
     RpcResponse response;
     response.requestId = requestId;
     response.success = true;
@@ -310,7 +311,7 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
   response.success = true;
   response.returnValue = httpRequestId;
   json jsonResponse = response;
-  SendMessage(jsonResponse.dump());
+  this->SendMessage(jsonResponse.dump());
 }
 
 void BrowserProcessHandler::Client_ShutdownRpc() {
@@ -375,6 +376,7 @@ void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
   request.id = CreateUuid();
   request.className = "Client";
   request.methodName = "OnLogMessage";
+  request.instanceId = 1;
   json args;
   args["level"] = level;
   args["message"] = message;
@@ -394,7 +396,7 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       CefPostTask(
           TID_UI,
           base::BindOnce(&BrowserProcessHandler::Client_CreateBrowserRpc, this,
-                         request.id, arguments.url, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated, arguments.private_));
+                         request.id, arguments.url, arguments.windowOrigin, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated, arguments.private_));
       return;
     }
 
@@ -501,6 +503,9 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
     }
 
     if (request.methodName == "WasResized") {
+      Browser_WasResized arguments =
+          request.arguments.get<Browser_WasResized>();
+      browserHandler->SetPageRectangle(arguments.rectangle);
       browser->GetHost()->WasResized();
       return;
     }
@@ -673,59 +678,38 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
           request.methodName.c_str());
 }
 
-void BrowserProcessHandler::HandleRpcResponse(RpcResponse response) {
-  SDL_LockMutex(this->responseMapMutex);
-  auto it = this->responseEntries.find(response.requestId);
-  if (it != this->responseEntries.end()) {
-    ResponseEntry* e = it->second.get();
-    SDL_LockMutex(e->mutex);
-    e->payload = response.returnValue.dump();
-    e->ready = true;
-    SDL_SignalCondition(e->cond);
-    SDL_UnlockMutex(e->mutex);
-  }
-  SDL_UnlockMutex(this->responseMapMutex);
+void BrowserProcessHandler::RegisterPendingCallback(const UUID& requestId,
+                                                    PendingCallback callback) {
+  SDL_LockMutex(this->pendingCallbacksMutex);
+  this->pendingCallbacks[requestId] = std::move(callback);
+  SDL_UnlockMutex(this->pendingCallbacksMutex);
 }
 
-template <typename T>
-std::optional<T> BrowserProcessHandler::WaitForResponse(UUID requestId) {
-  std::unique_ptr<ResponseEntry> entry = std::make_unique<ResponseEntry>();
+void BrowserProcessHandler::CancelPendingCallback(const UUID& requestId) {
+  SDL_LockMutex(this->pendingCallbacksMutex);
+  this->pendingCallbacks.erase(requestId);
+  SDL_UnlockMutex(this->pendingCallbacksMutex);
+}
 
-  // Insert into map under map mutex
-  SDL_LockMutex(responseMapMutex);
-  responseEntries[requestId] = std::move(entry);
-  ResponseEntry* e = responseEntries[requestId].get();
-  SDL_UnlockMutex(responseMapMutex);
+void BrowserProcessHandler::HandleRpcResponse(RpcResponse response) {
+  PendingCallback callback = nullptr;
 
-  // Wait for signal
-  SDL_LockMutex(e->mutex);
-  while (!e->ready) {
-    SDL_WaitCondition(e->cond, e->mutex);
+  SDL_LockMutex(this->pendingCallbacksMutex);
+  auto it = this->pendingCallbacks.find(response.requestId);
+  if (it != this->pendingCallbacks.end()) {
+    callback = std::move(it->second);
+    this->pendingCallbacks.erase(it);
   }
-  SDL_UnlockMutex(e->mutex);
+  SDL_UnlockMutex(this->pendingCallbacksMutex);
 
-  std::string payload;
-  SDL_LockMutex(responseMapMutex);
-  auto it = responseEntries.find(requestId);
-  if (it != responseEntries.end()) {
-    ResponseEntry* entryPtr = it->second.get();
-    SDL_LockMutex(entryPtr->mutex);
-    payload = std::move(entryPtr->payload);
-    SDL_UnlockMutex(entryPtr->mutex);
-    responseEntries.erase(it);
-  }
-  SDL_UnlockMutex(responseMapMutex);
-
-  try {
-    json j = json::parse(payload);
-    return j.get<T>();
-  } catch (const std::exception& e) {
-    size_t previewLen = std::min<size_t>(payload.size(), 256);
-    std::string preview = payload.substr(0, previewLen);
-    std::string msg = std::string("WaitForResponse: ") + e.what() +
-                      " payload='" + preview + "'";
-    this->SendLogMessage(SDL_LOG_PRIORITY_ERROR, msg);
-    return std::nullopt;
+  if (callback) {
+    if (response.success) {
+      // Execute callback (which handles posting to TID_UI if needed)
+      callback(response.returnValue);
+    } else {
+      SDL_Log("RPC response error for request: %s",
+              response.error.dump().c_str());
+    }
   }
 }
 
@@ -851,18 +835,3 @@ void BrowserProcessHandler::HttpRequest_CancelRpc(const int requestId) {
 void BrowserProcessHandler::RemoveHttpRequest(const int requestId) {
   httpRequestEntries.erase(requestId);
 }
-
-template std::optional<std::monostate>
-    BrowserProcessHandler::WaitForResponse<std::monostate>(UUID);
-template std::optional<bool>
-    BrowserProcessHandler::WaitForResponse<bool>(UUID);
-template std::optional<std::string>
-    BrowserProcessHandler::WaitForResponse<std::string>(UUID);
-template std::optional<CefRect>
-    BrowserProcessHandler::WaitForResponse<CefRect>(UUID);
-template std::optional<ContextMenuConfiguration>
-    BrowserProcessHandler::WaitForResponse<ContextMenuConfiguration>(UUID);
-template std::optional<CefPoint>
-    BrowserProcessHandler::WaitForResponse<CefPoint>(UUID);
-template std::optional<DownloadConfiguration>
-    BrowserProcessHandler::WaitForResponse<DownloadConfiguration>(UUID);

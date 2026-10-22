@@ -24,10 +24,13 @@ class BrowserHandler : public CefClient,
                        CefDownloadHandler {
  public:
   BrowserHandler(BrowserProcessHandler* browserProcessHandler,
+                 CefPoint windowOrigin,
                  CefRect pageRectangle);
   
   void MarkCreated();
   void MarkDestroyed();
+  void SetPageRectangle(CefRect rectangle);
+  void SetWindowOrigin(CefPoint point);
   std::optional<UUID> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
                                      std::string methodName,
                                      json arguments);
@@ -177,10 +180,13 @@ class BrowserHandler : public CefClient,
                          CefRefPtr<CefDownloadItemCallback> callback) override;
 
  private:
+  void DispatchDownloadAction(CefRefPtr<CefDownloadItemCallback> callback, std::string action);
+
   using TimePoint = std::chrono::steady_clock::time_point;
 
   BrowserProcessHandler* browserProcessHandler;
-  CefRect initialPageRectangle;
+  CefRect pageRectangle;
+  CefPoint windowOrigin;
   std::optional<TimePoint> createdAt;
   std::optional<TimePoint> destroyedAt;
 

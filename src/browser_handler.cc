@@ -6,13 +6,18 @@
 #include "rpc.hpp"
 
 #include <windows.h>
+#include <include/base/cef_bind.h>
+#include <include/base/cef_callback.h>
+#include <include/wrapper/cef_closure_task.h>
 
 using json = nlohmann::json;
 
 BrowserHandler::BrowserHandler(BrowserProcessHandler* browserProcessHandler,
-                               CefRect initialPageRectangle)
+                               CefPoint windowOrigin,
+                               CefRect pageRectangle)
     : browserProcessHandler(browserProcessHandler),
-      initialPageRectangle(initialPageRectangle) {}
+      windowOrigin(windowOrigin),
+      pageRectangle(pageRectangle) {}
 
 void BrowserHandler::MarkCreated() {
   this->createdAt = std::chrono::steady_clock::now();
@@ -20,6 +25,14 @@ void BrowserHandler::MarkCreated() {
 
 void BrowserHandler::MarkDestroyed() {
   this->destroyedAt = std::chrono::steady_clock::now();
+}
+
+void BrowserHandler::SetPageRectangle(CefRect rectangle) {
+  pageRectangle = rectangle;
+}
+
+void BrowserHandler::SetWindowOrigin(CefPoint point) {
+  windowOrigin = point;
 }
 
 std::optional<UUID> BrowserHandler::SendRpcRequest(
@@ -102,18 +115,7 @@ bool BrowserHandler::OnProcessMessageReceived(
 
 void BrowserHandler::GetViewRect(CefRefPtr<CefBrowser> browser,
                                  CefRect& rect) {
-  if (!createdAt.has_value()) {
-    rect = initialPageRectangle;
-    return;
-  }
-  std::optional<UUID> requestId = this->SendRpcRequest(browser, "GetViewRect");
-  if (!requestId.has_value()) {
-    rect = initialPageRectangle;
-  } else {
-    std::optional<CefRect> result =
-        browserProcessHandler->WaitForResponse<CefRect>(requestId.value());
-    rect = result.value_or(initialPageRectangle);
-  }
+  rect = pageRectangle;
 }
 
 void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
@@ -142,14 +144,16 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
   HANDLE applicationProcessHandle =
       browserProcessHandler->GetApplicationProcessHandle();
   HANDLE duplicateHandle = NULL;
-  if (!DuplicateHandle(GetCurrentProcess(), fileMapping,
-                       applicationProcessHandle, &duplicateHandle, 0, FALSE,
-                       DUPLICATE_SAME_ACCESS)) {
+  bool duplicateSuccess = DuplicateHandle(
+      GetCurrentProcess(), fileMapping, applicationProcessHandle,
+      &duplicateHandle, 0, FALSE, DUPLICATE_SAME_ACCESS);
+  CloseHandle(fileMapping);
+
+  if (!duplicateSuccess) {
     SDL_Log("Error duplicating file mapping handle: DuplicateHandle() call failed");
-    CloseHandle(fileMapping);
     return;
   }
-
+  
   Browser_OnPaint arguments;
   arguments.elementType = type;
   arguments.width = width;
@@ -160,14 +164,7 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     arguments.dirtyRects.push_back(rect);
   }
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnPaint", jsonArguments);
-  if (!requestId.has_value()) {
-    CloseHandle(fileMapping);
-    return;
-  }
-  browserProcessHandler->WaitForResponse<std::monostate>(requestId.value());
-  CloseHandle(fileMapping);
+  this->SendRpcRequest(browser, "OnPaint", jsonArguments);
 }
 
 void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
@@ -178,9 +175,10 @@ void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
   HANDLE applicationProcessHandle =
       browserProcessHandler->GetApplicationProcessHandle();
   HANDLE duplicateHandle = NULL;
-  if (!DuplicateHandle(GetCurrentProcess(), sourceHandle,
-                       applicationProcessHandle, &duplicateHandle, 0, FALSE,
-                       DUPLICATE_SAME_ACCESS)) {
+  bool duplicateSuccess = DuplicateHandle(
+      GetCurrentProcess(), sourceHandle, applicationProcessHandle,
+      &duplicateHandle, 0, FALSE, DUPLICATE_SAME_ACCESS);
+  if (!duplicateSuccess) {
     SDL_Log("Error duplicating shared texture: DuplicateHandle() call failed");
     return;
   }
@@ -189,12 +187,7 @@ void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
   arguments.format = info.format;
   arguments.sharedTextureHandle = reinterpret_cast<uintptr_t>(duplicateHandle);
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnAcceleratedPaint", jsonArguments);
-  if (!requestId.has_value()) {
-    return;
-  }
-  browserProcessHandler->WaitForResponse<std::monostate>(requestId.value());
+  this->SendRpcRequest(browser, "OnAcceleratedPaint", jsonArguments);
 }
 
 void BrowserHandler::OnTextSelectionChanged(CefRefPtr<CefBrowser> browser,
@@ -218,21 +211,8 @@ bool BrowserHandler::GetScreenPoint(CefRefPtr<CefBrowser> browser,
                                     int viewY,
                                     int& screenX,
                                     int& screenY) {
-  Browser_GetScreenPoint arguments;
-  arguments.view = CefPoint(viewX, viewY);
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "GetScreenPoint", jsonArguments);
-  if (!requestId.has_value()) {
-    return false;
-  }
-  std::optional<CefPoint> result = browserProcessHandler->WaitForResponse<CefPoint>(requestId.value());
-  if (!result.has_value()) {
-    return false;
-  }
-  CefPoint screen = result.value();
-  screenX = screen.x;
-  screenY = screen.y;
+  screenX = windowOrigin.x + pageRectangle.x + viewX;
+  screenY = windowOrigin.y + pageRectangle.y + viewY;
   return true;
 }
 
@@ -311,11 +291,7 @@ bool BrowserHandler::DoClose(CefRefPtr<CefBrowser> browser) {
 void BrowserHandler::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   this->MarkDestroyed();
   browserProcessHandler->RemoveBrowserHandler(browser->GetIdentifier());
-  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnBeforeClose");
-  if (!requestId.has_value()) {
-    return;
-  }
-  browserProcessHandler->WaitForResponse<std::monostate>(requestId.value());
+  this->SendRpcRequest(browser, "OnBeforeClose");
 }
 
 bool BrowserHandler::OnBeforePopup(
@@ -338,14 +314,8 @@ bool BrowserHandler::OnBeforePopup(
   arguments.targetDisposition = static_cast<int>(target_disposition);
   arguments.userGesture = user_gesture;
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnBeforePopup", jsonArguments);
-  if (!requestId.has_value()) {
-    return true;
-  }
-  std::optional<bool> result =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return result.value_or(true);
+  this->SendRpcRequest(browser, "OnBeforePopup", jsonArguments);
+  return true;
 }
 
 bool BrowserHandler::OnBeforeBrowse(
@@ -368,16 +338,9 @@ bool BrowserHandler::OnBeforeBrowse(
   arguments.transitionType =
       static_cast<int>(request->GetTransitionType());
   arguments.resourceType = static_cast<int>(request->GetResourceType());
-
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnBeforeBrowse", jsonArguments);
-  if (!requestId.has_value()) {
-    return false;
-  }
-  std::optional<bool> result =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return result.value_or(false);
+  this->SendRpcRequest(browser, "OnBeforeBrowse", jsonArguments);
+  return false;
 }
 
 bool BrowserHandler::OnOpenURLFromTab(
@@ -391,14 +354,8 @@ bool BrowserHandler::OnOpenURLFromTab(
   arguments.targetDisposition = static_cast<int>(target_disposition);
   arguments.userGesture = user_gesture;
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnOpenUrlFromTab", jsonArguments);
-  if (!requestId.has_value()) {
-    return true;
-  }
-  std::optional<bool> result =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return result.value_or(true);
+  this->SendRpcRequest(browser, "OnOpenUrlFromTab", jsonArguments);
+  return true;
 }
 
 void BrowserHandler::OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) {
@@ -421,14 +378,8 @@ void BrowserHandler::OnRenderProcessTerminated(
 bool BrowserHandler::OnRenderProcessUnresponsive(
     CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefUnresponsiveProcessCallback> callback) {
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnRenderProcessUnresponsive");
-  if (!requestId.has_value()) {
-    return true;
-  }
-  std::optional<bool> result =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return result.value_or(true);
+  this->SendRpcRequest(browser, "OnRenderProcessUnresponsive");
+  return true;
 }
 
 void BrowserHandler::OnRenderViewReady(CefRefPtr<CefBrowser> browser) {
@@ -438,32 +389,7 @@ void BrowserHandler::OnRenderViewReady(CefRefPtr<CefBrowser> browser) {
 void BrowserHandler::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefFrame> frame,
                                          CefRefPtr<CefContextMenuParams> params,
-                                         CefRefPtr<CefMenuModel> model) {
-  Browser_OnBeforeContextMenu arguments;
-  arguments.origin = CefPoint(params->GetXCoord(), params->GetYCoord());
-  arguments.nodeType = static_cast<int>(params->GetTypeFlags());
-  arguments.nodeMedia = static_cast<int>(params->GetMediaType());
-  arguments.nodeMediaStateFlags =
-      static_cast<int>(params->GetMediaStateFlags());
-  arguments.nodeEditFlags = static_cast<int>(params->GetEditStateFlags());
-  arguments.selectionText = params->GetSelectionText().ToString();
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnBeforeContextMenu", jsonArguments);
-  if (!requestId.has_value()) {
-    return;
-  }
-  std::optional<ContextMenuConfiguration> result =
-      browserProcessHandler->WaitForResponse<ContextMenuConfiguration>(
-          requestId.value());
-  if (!result.has_value()) {
-    return;
-  }
-  model->Clear();
-  ContextMenuConfiguration config = result.value();
-  for (const auto& command : config.commands) {
-      model->InsertItemAt(command.index, command.commandId, command.label);
-  }
-}
+                                         CefRefPtr<CefMenuModel> model) {}
 
 bool BrowserHandler::RunContextMenu(
     CefRefPtr<CefBrowser> browser,
@@ -471,7 +397,38 @@ bool BrowserHandler::RunContextMenu(
     CefRefPtr<CefContextMenuParams> params,
     CefRefPtr<CefMenuModel> model,
     CefRefPtr<CefRunContextMenuCallback> callback) {
-  return false;
+  Browser_RunContextMenu arguments;
+
+  if (model) {
+    size_t count = model->GetCount();
+    for (size_t i = 0; i < count; ++i) {
+      ContextMenuCommand cmd;
+      cmd.index = static_cast<int>(i);
+      cmd.commandId = model->GetCommandIdAt(i);
+      cmd.label = model->GetLabelAt(i).ToString();
+      cmd.enabled = model->IsEnabledAt(i);
+      cmd.checked = model->IsCheckedAt(i);
+      arguments.commands.push_back(std::move(cmd));
+    }
+  }
+
+  json jsonArguments = arguments;
+  std::optional<UUID> requestId =
+      this->SendRpcRequest(browser, "RunContextMenu", arguments);
+  if (!requestId.has_value()) {
+    return false;
+  }
+
+
+  browserProcessHandler->RegisterPendingCallback(
+      requestId.value(), [callback](const json& returnValue) {
+        int commandId = returnValue.value("commandId", -1);
+        CefPostTask(TID_UI,
+                    base::BindOnce(&CefRunContextMenuCallback::Continue,
+                                   callback.get(), commandId, EVENTFLAG_NONE));
+      });
+
+  return true;
 }
 
 bool BrowserHandler::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
@@ -482,14 +439,8 @@ bool BrowserHandler::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
   Browser_OnContextMenuCommand arguments;
   arguments.commandId = commandId;
   json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnContextMenuCommand", jsonArguments);
-  if (!requestId.has_value()) {
-    return false;
-  }
-  std::optional<bool> result =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return result.value_or(false);
+  this->SendRpcRequest(browser, "OnContextMenuCommand", jsonArguments);
+  return true;
 }
 
 void BrowserHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
@@ -556,18 +507,7 @@ bool BrowserHandler::OnTooltip(CefRefPtr<CefBrowser> browser,
 bool BrowserHandler::CanDownload(CefRefPtr<CefBrowser> browser,
                                  const CefString& url,
                                  const CefString& request_method) {
-  Browser_CanDownload arguments;
-  arguments.url = url.ToString();
-  arguments.requestMethod = request_method.ToString();
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "CanDownload", jsonArguments);
-  if (!requestId.has_value()) {
-    return false;
-  }
-  std::optional<bool> response =
-      browserProcessHandler->WaitForResponse<bool>(requestId.value());
-  return response.value_or(false);
+  return true;
 }
 
 bool BrowserHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
@@ -599,16 +539,22 @@ bool BrowserHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
   arguments.downloadItem = downloadItem;
 
   json jsonArguments = arguments;
-  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnBeforeDownload", jsonArguments);
+  std::optional<UUID> requestId =
+      this->SendRpcRequest(browser, "OnBeforeDownload", arguments);
   if (!requestId.has_value()) {
     return false;
   }
-  std::optional<DownloadConfiguration> response =
-      browserProcessHandler->WaitForResponse<DownloadConfiguration>(requestId.value());
-  if (!response.has_value() || !response.value().shouldContinue) {
-    return false;
-  }
-  callback->Continue(response.value().downloadPath, response.value().showDialog);
+
+  browserProcessHandler->RegisterPendingCallback(requestId.value(), [callback](const json& returnValue) {
+    DownloadConfiguration config = returnValue.get<DownloadConfiguration>();
+    if (config.shouldContinue) {
+        CefPostTask(TID_UI,
+                    base::BindOnce(&CefBeforeDownloadCallback::Continue,
+                                    callback.get(), config.downloadPath,
+                                    config.showDialog));
+    }
+  });
+
   return true;
 }
 
@@ -640,27 +586,32 @@ void BrowserHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
   downloadItem.mimeType = download_item->GetMimeType();
   arguments.downloadItem = downloadItem;
   json jsonArguments = arguments;
-
-  std::optional<UUID> requestId =
-      this->SendRpcRequest(browser, "OnDownloadUpdated", jsonArguments);
+  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnDownloadUpdated", jsonArguments);
   if (!requestId.has_value()) {
-    callback->Pause();
     return;
   }
-  std::optional<std::string> response =
-      browserProcessHandler->WaitForResponse<std::string>(
-          requestId.value());
-  std::string action = response.value_or("pause");
-  if (action == "cancel") {
-    callback->Cancel(); 
-  } else if (action == "pause") {
-    callback->Pause();
-  } else if (action == "resume") {
-    callback->Resume();  
-  } else {
-    browserProcessHandler->SendErrorResponse(
-        requestId.value(), "Unknown download action '" + action + "', defaulting to 'pause'.");
-    callback->Pause();
-  }
+
+  CefRefPtr<BrowserHandler> self = this;
+  browserProcessHandler->RegisterPendingCallback(
+      requestId.value(), [self, callback](const json& returnValue) {
+        std::string action = returnValue.get<std::string>();
+        CefPostTask(TID_UI,
+                    base::BindOnce(&BrowserHandler::DispatchDownloadAction,
+                                   self, callback, std::move(action)));
+      });
 }
 
+
+void BrowserHandler::DispatchDownloadAction(
+    CefRefPtr<CefDownloadItemCallback> callback,
+    std::string action) {
+    if (action == "cancel") {
+      callback->Cancel();
+    } else if (action == "pause") {
+      callback->Pause();
+    } else if (action == "resume") {
+      callback->Resume();
+    } else {
+      SDL_Log("Unrecognized download action: %s", action.c_str());
+    }
+}

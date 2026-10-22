@@ -166,6 +166,7 @@ inline void to_json(json& j, const RpcRequest& m) {
 // Response messages
 struct Client_CreateBrowser {
   std::string url;
+  CefPoint windowOrigin;
   CefRect rectangle;
   std::optional<std::string> html;
   uintptr_t parentWindowHandle;
@@ -176,6 +177,7 @@ struct Client_CreateBrowser {
 
 inline void from_json(const json& j, Client_CreateBrowser& m) {
   j.at("url").get_to(m.url);
+  j.at("windowOrigin").get_to(m.windowOrigin);
   j.at("rectangle").get_to(m.rectangle);
   j.at("html").get_to(m.html);
   j.at("parentWindowHandle").get_to(m.parentWindowHandle);
@@ -386,6 +388,15 @@ inline void from_json(const json& j, Browser_SetFrameRate& m) {
   j.at("frameRate").get_to(m.frameRate);
 }
 
+struct Browser_WasResized {
+  CefRect rectangle;
+};
+
+inline void from_json(const json& j, Browser_WasResized& m) {
+  j.at("rectangle").get_to(m.rectangle);
+}
+
+
 struct Browser_OnAcceleratedPaint {
   int elementType;
   uintptr_t sharedTextureHandle;
@@ -499,43 +510,30 @@ inline void from_json(const json& j, Browser_Close& m) {
   j.at("forceClose").get_to(m.forceClose);
 }
 
-struct Browser_OnBeforeContextMenu {
-  CefPoint origin;
-  int nodeType;
-  int nodeMedia;
-  int nodeMediaStateFlags;
-  int nodeEditFlags;
-  std::string selectionText;
-};
-
-inline void to_json(json& j, const Browser_OnBeforeContextMenu& m) {
-  j = json::object();
-  j["origin"] = m.origin;
-  j["nodeType"] = m.nodeType;
-  j["nodeMedia"] = m.nodeMedia;
-  j["nodeMediaStateFlags"] = m.nodeMediaStateFlags;
-  j["nodeEditFlags"] = m.nodeEditFlags;
-  j["selectionText"] = m.selectionText;
-}
-
 struct ContextMenuCommand {
   int index;
   int commandId;
   std::string label;
+  bool enabled;
+  bool checked;
 };
 
-inline void from_json(const json& j, ContextMenuCommand& m) {
-  j.at("index").get_to(m.index);
-  j.at("commandId").get_to(m.commandId);
-  j.at("label").get_to(m.label);
+inline void to_json(json& j, const ContextMenuCommand& m) {
+  j = json::object();
+  j["index"] = m.index;
+  j["commandId"] = m.commandId;
+  j["label"] = m.label;
+  j["enabled"] = m.enabled;
+  j["checked"] = m.checked;
 }
 
-struct ContextMenuConfiguration {
+struct Browser_RunContextMenu {
   std::vector<ContextMenuCommand> commands;
 };
 
-inline void from_json(const json& j, ContextMenuConfiguration& m) {
-  j.at("commands").get_to(m.commands);
+inline void to_json(json& j, const Browser_RunContextMenu& m) {
+  j = json::object();
+  j["commands"] = m.commands;
 }
 
 struct Browser_OnPopupShow {
