@@ -175,12 +175,16 @@ class HistoryHandler : public CefV8Handler {
         Browser_OnPushState args;
         args.state = arguments[1]->GetStringValue().ToString();
         args.url = arguments[2]->GetStringValue().ToString();
+        args.isMainFrame = frame->IsMain();
+        args.frameId = frame->GetIdentifier().ToString();
         request.arguments = args;
       } else if (action == "replaceState") {
         request.methodName = "OnReplaceState";
         Browser_OnReplaceState args;
         args.state = arguments[1]->GetStringValue().ToString();
         args.url = arguments[2]->GetStringValue().ToString();
+        args.isMainFrame = frame->IsMain();
+        args.frameId = frame->GetIdentifier().ToString();
         request.arguments = args;
       } else {
         return false;
@@ -376,6 +380,14 @@ void RenderProcessHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
 
   std::string shimScript = R"(
     (function(modifyHistory, navigate) {
+      function resolveUrl(urlString) {
+        try {
+          return new URL(String(urlString ?? ''), document.baseURI || location.href).href;
+        } catch (e) {
+          return String(urlString || '');
+        }
+      }
+
       let _state = history.state;
       Object.defineProperty(history, 'state', { 
         get: () => _state 
@@ -388,11 +400,11 @@ void RenderProcessHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
       });
       history.pushState = function(state, unused, url) {
         _state = state;
-        modifyHistory('pushState', JSON.stringify(state), String(url || ''));
+        modifyHistory('pushState', JSON.stringify(state), resolveUrl(url));
       };
       history.replaceState = function(state, unused, url) {
         _state = state;
-        modifyHistory('replaceState', JSON.stringify(state), String(url || ''));
+        modifyHistory('replaceState', JSON.stringify(state), resolveUrl(url));
       };
       history.back = function() { 
         navigate('delta', -1, null);

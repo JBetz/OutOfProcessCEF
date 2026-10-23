@@ -502,6 +502,12 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       return;
     }
 
+    if (request.methodName == "SetWindowOrigin") {
+      Browser_SetWindowOrigin arguments = request.arguments.get<Browser_SetWindowOrigin>();
+      browserHandler->SetWindowOrigin(arguments.origin);
+      return;
+    }
+
     if (request.methodName == "WasResized") {
       Browser_WasResized arguments =
           request.arguments.get<Browser_WasResized>();
@@ -756,8 +762,7 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
         size_t previewLen = std::min<size_t>(jsonMessageString.size(), 256);
         std::string preview = jsonMessageString.substr(0, previewLen);
         SDL_Log(
-            "RpcReceiveThread: JSON parse_error: %s at byte=%u "
-            "payload_preview='%s'",
+            "RpcReceiveThread: JSON parse_error: %s at byte=%u payload_preview='%s'",
             e_parse.what(), static_cast<unsigned int>(e_parse.byte),
             preview.c_str());
         continue;

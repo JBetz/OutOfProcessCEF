@@ -388,6 +388,14 @@ inline void from_json(const json& j, Browser_SetFrameRate& m) {
   j.at("frameRate").get_to(m.frameRate);
 }
 
+struct Browser_SetWindowOrigin {
+  CefPoint origin;
+};
+
+inline void from_json(const json& j, Browser_SetWindowOrigin& m) {
+  j.at("origin").get_to(m.origin);
+}
+
 struct Browser_WasResized {
   CefRect rectangle;
 };
@@ -761,23 +769,31 @@ inline void to_json(json& j, const Browser_OnRenderProcessTerminated& m) {
 struct Browser_OnPushState {
   std::string state;
   std::string url;
+  bool isMainFrame;
+  std::string frameId;
 };
 
 inline void to_json(json& j, const Browser_OnPushState& m) {
   j = json::object();
   j["state"] = m.state;
   j["url"] = m.url;
+  j["isMainFrame"] = m.isMainFrame;
+  j["frameId"] = m.frameId;
 }
 
 struct Browser_OnReplaceState {
   std::string state;
   std::string url;
+  bool isMainFrame;
+  std::string frameId;
 };
 
 inline void to_json(json& j, const Browser_OnReplaceState& m) {
   j = json::object();
   j["state"] = m.state;
   j["url"] = m.url;
+  j["isMainFrame"] = m.isMainFrame;
+  j["frameId"] = m.frameId;
 }
 
 struct Browser_OnNavigateByUrl {
