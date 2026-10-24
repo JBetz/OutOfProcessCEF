@@ -410,6 +410,26 @@ void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
       return;
     }
 
+    if (request.methodName == "GetPendingCallbacks") {
+      std::vector<std::string> pendingCallbackUuids;
+      for (auto const& imap : pendingCallbacks) {
+        pendingCallbackUuids.push_back(uuid_to_string(imap.first));
+      }
+      RpcResponse response;
+      response.requestId = request.id;
+      response.success = true;
+      response.returnValue = pendingCallbackUuids;
+      json jsonResponse = response;
+      this->SendMessage(jsonResponse.dump());
+      return;
+    }
+
+    if (request.methodName == "CancelPendingCallback") {
+      Client_CancelPendingCallback args = request.arguments.get<Client_CancelPendingCallback>();
+      this->CancelPendingCallback(args.requestId);
+      return;
+    }
+
     if (request.methodName == "Shutdown") {
       CefPostTask(
           TID_UI,

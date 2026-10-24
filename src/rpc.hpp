@@ -151,7 +151,11 @@ inline void from_json(const json& j, RpcRequest& m) {
   j.at("class").get_to(m.className);
   j.at("method").get_to(m.methodName);
   j.at("instanceId").get_to(m.instanceId);
-  j.at("arguments").get_to(m.arguments);
+  if (j.contains("arguments") && !j.at("arguments").is_null()) {
+    j.at("arguments").get_to(m.arguments);
+  } else {
+    m.arguments = nullptr;
+  }
 }
 
 inline void to_json(json& j, const RpcRequest& m) {
@@ -956,6 +960,14 @@ inline void from_json(const json& j, Client_CreateHttpRequest& m) {
   if (j.contains("body") && !j.at("body").is_null()) {
     m.body = j.at("body").get<json>();
   }
+}
+
+struct Client_CancelPendingCallback {
+  UUID requestId;
+};
+
+inline void from_json(const json& j, Client_CancelPendingCallback& m) {
+  j.at("requestId").get_to(m.requestId);
 }
 
 struct HttpClient_OnResponse {
