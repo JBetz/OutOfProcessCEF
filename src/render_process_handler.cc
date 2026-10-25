@@ -173,18 +173,22 @@ class HistoryHandler : public CefV8Handler {
       if (action == "pushState") {
         request.methodName = "OnPushState";  
         Browser_OnPushState args;
+        args.frameId = frame->GetIdentifier().ToString();
+        args.isMainFrame = frame->IsMain();
         args.state = arguments[1]->GetStringValue().ToString();
         args.url = arguments[2]->GetStringValue().ToString();
-        args.isMainFrame = frame->IsMain();
-        args.frameId = frame->GetIdentifier().ToString();
+        args.isActive = arguments[3]->GetBoolValue();
+        args.hasBeenActive = arguments[4]->GetBoolValue();
         request.arguments = args;
       } else if (action == "replaceState") {
         request.methodName = "OnReplaceState";
         Browser_OnReplaceState args;
+        args.frameId = frame->GetIdentifier().ToString();
+        args.isMainFrame = frame->IsMain();
         args.state = arguments[1]->GetStringValue().ToString();
         args.url = arguments[2]->GetStringValue().ToString();
-        args.isMainFrame = frame->IsMain();
-        args.frameId = frame->GetIdentifier().ToString();
+        args.isActive = arguments[3]->GetBoolValue();
+        args.hasBeenActive = arguments[4]->GetBoolValue();
         request.arguments = args;
       } else {
         return false;
@@ -400,11 +404,15 @@ void RenderProcessHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
       });
       history.pushState = function(state, unused, url) {
         _state = state;
-        modifyHistory('pushState', JSON.stringify(state), resolveUrl(url));
+        const isUserGesture = navigator.userActivation ? navigator.userActivation.isActive : false;
+        const hasBeenActive = navigator.userActivation ? navigator.userActivation.hasBeenActive : false;
+        modifyHistory('pushState', JSON.stringify(state), resolveUrl(url), isUserGesture, hasBeenActive);
       };
       history.replaceState = function(state, unused, url) {
         _state = state;
-        modifyHistory('replaceState', JSON.stringify(state), resolveUrl(url));
+        const isUserGesture = navigator.userActivation ? navigator.userActivation.isActive : false;
+        const hasBeenActive = navigator.userActivation ? navigator.userActivation.hasBeenActive : false;
+        modifyHistory('replaceState', JSON.stringify(state), resolveUrl(url), isUserGesture, hasBeenActive);
       };
       history.back = function() { 
         navigate('delta', -1, null);

@@ -735,10 +735,12 @@ inline void to_json(json& j, const Browser_OnPaint& m) {
 }
 
 struct Browser_OnBeforeBrowse {
+  std::string frameId;
   std::string url;
   std::string method;
   std::string referrerUrl;
   std::map<std::string, std::string> headers;
+  bool isMainFrame;
   bool userGesture;
   bool isRedirect;
   int transitionType;
@@ -747,10 +749,12 @@ struct Browser_OnBeforeBrowse {
 
 inline void to_json(json& j, const Browser_OnBeforeBrowse& m) {
   j = json::object();
+  j["frameId"] = m.frameId;
   j["url"] = m.url;
   j["method"] = m.method;
   j["referrerUrl"] = m.referrerUrl;
   j["headers"] = m.headers;
+  j["isMainFrame"] = m.isMainFrame;
   j["userGesture"] = m.userGesture;
   j["isRedirect"] = m.isRedirect;
   j["transitionType"] = m.transitionType;
@@ -771,33 +775,41 @@ inline void to_json(json& j, const Browser_OnRenderProcessTerminated& m) {
 }
 
 struct Browser_OnPushState {
+  std::string frameId;
+  bool isMainFrame;
+  bool isActive;
+  bool hasBeenActive;
   std::string state;
   std::string url;
-  bool isMainFrame;
-  std::string frameId;
 };
 
 inline void to_json(json& j, const Browser_OnPushState& m) {
   j = json::object();
+  j["frameId"] = m.frameId;
+  j["isMainFrame"] = m.isMainFrame;
+  j["isActive"] = m.isActive;
+  j["hasBeenActive"] = m.hasBeenActive;
   j["state"] = m.state;
   j["url"] = m.url;
-  j["isMainFrame"] = m.isMainFrame;
-  j["frameId"] = m.frameId;
 }
 
 struct Browser_OnReplaceState {
+  std::string frameId;
+  bool isMainFrame;
+  bool isActive;
+  bool hasBeenActive;
   std::string state;
   std::string url;
-  bool isMainFrame;
-  std::string frameId;
 };
 
 inline void to_json(json& j, const Browser_OnReplaceState& m) {
   j = json::object();
+  j["frameId"] = m.frameId;
+  j["isMainFrame"] = m.isMainFrame;
+  j["isActive"] = m.isActive;
+  j["hasBeenActive"] = m.hasBeenActive;
   j["state"] = m.state;
   j["url"] = m.url;
-  j["isMainFrame"] = m.isMainFrame;
-  j["frameId"] = m.frameId;
 }
 
 struct Browser_OnNavigateByUrl {

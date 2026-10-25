@@ -325,6 +325,7 @@ bool BrowserHandler::OnBeforeBrowse(
     bool user_gesture,
     bool is_redirect) {
   Browser_OnBeforeBrowse arguments;
+  arguments.frameId = frame->GetIdentifier().ToString();
   arguments.url = request->GetURL().ToString();
   arguments.method = request->GetMethod().ToString();
   arguments.referrerUrl = request->GetReferrerURL().ToString();
@@ -333,6 +334,7 @@ bool BrowserHandler::OnBeforeBrowse(
   for (const auto& [key, value] : headerMap) {
     arguments.headers[key.ToString()] = value.ToString();
   }
+  arguments.isMainFrame = frame->IsMain();
   arguments.userGesture = user_gesture;
   arguments.isRedirect = is_redirect;
   arguments.transitionType =
