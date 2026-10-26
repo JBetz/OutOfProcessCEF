@@ -1,4 +1,4 @@
-This project provides a way to run CEF out-of-process and communicate with it using a language-agnostic JSON-RPC.
+This project provides a way to run CEF out-of-process and communicate with it using a JSON-RPC.
 
 # Quick Links
 
