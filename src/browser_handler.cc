@@ -34,42 +34,6 @@ void BrowserHandler::SetWindowOrigin(CefPoint point) {
   windowOrigin = point;
 }
 
-std::optional<CefString> BrowserHandler::SendRpcRequest(
-    CefRefPtr<CefBrowser> browser,
-    std::string methodName,
-    CefRefPtr<CefDictionaryValue> arguments) {
-  if (!createdAt.has_value()) {
-    browserProcessHandler->SendLogMessage(SDL_LOG_PRIORITY_WARN,
-        "Attempted to send RPC request '" + methodName +
-        "' but browser has not been created yet");
-    return std::nullopt;
-  }
-  if (destroyedAt.has_value()) {
-    browserProcessHandler->SendLogMessage(SDL_LOG_PRIORITY_WARN,
-        "Attempted to send RPC request '" + methodName +
-        "' but browser has been destroyed");
-    return std::nullopt;
-  }
-  CefString requestId = uuid_to_string(CreateUuid());
-  CefRefPtr<CefValue> request = CefValue::Create();
-  CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
-  payload->SetString("id", requestId);
-  payload->SetString("class", "Browser");
-  payload->SetString("method", methodName);
-  payload->SetInt("instanceId", browser->GetIdentifier());
-  payload->SetDictionary("arguments", arguments);
-  request->SetDictionary(payload);
-  CefString jsonRequest = CefWriteJSON(request, JSON_WRITER_DEFAULT);
-  browserProcessHandler->SendMessage(jsonRequest);
-  return requestId;
-}
-
-std::optional<CefString> BrowserHandler::SendRpcRequest(
-    CefRefPtr<CefBrowser> browser,
-    std::string methodName) {
-  return this->SendRpcRequest(browser, methodName, CefDictionaryValue::Create());
-}
-
 CefRefPtr<CefRenderHandler> BrowserHandler::GetRenderHandler() {
   return this;
 }
@@ -107,7 +71,7 @@ bool BrowserHandler::OnProcessMessageReceived(
   if (!args || args->GetSize() == 0) {
     return false;
   }
-  std::string payload = CefWriteJSON(args->GetValue(0), JSON_WRITER_DEFAULT);
+  CefString payload = CefWriteJSON(args->GetValue(0), JSON_WRITER_DEFAULT);
   browserProcessHandler->BrowserProcessHandler::SendMessage(payload);
   return true;
 }
@@ -171,7 +135,7 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     dirtyRectsList->SetValue(dirtyRectsList->GetSize(), rectangleDictionaryValue);
   }
   arguments->SetList("dirtyRects", dirtyRectsList);
-  this->SendRpcRequest(browser, "OnPaint", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnPaint", arguments);
 }
 
 void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
@@ -193,7 +157,7 @@ void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
   arguments->SetInt("elementType", type);
   arguments->SetInt("format", info.format);
   arguments->SetInt("sharedTextureHandle", reinterpret_cast<uintptr_t>(duplicateHandle));
-  this->SendRpcRequest(browser, "OnAcceleratedPaint", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnAcceleratedPaint", arguments);
 }
 
 void BrowserHandler::OnTextSelectionChanged(CefRefPtr<CefBrowser> browser,
@@ -203,7 +167,8 @@ void BrowserHandler::OnTextSelectionChanged(CefRefPtr<CefBrowser> browser,
   arguments->SetString("selectedText", selected_text);
   arguments->SetInt("selectedRangeFrom", selected_range.from);
   arguments->SetInt("selectedRangeTo", selected_range.to);
-  this->SendRpcRequest(browser, "OnTextSelectionChanged", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnTextSelectionChanged", arguments);
 }
 
 bool BrowserHandler::GetScreenInfo(CefRefPtr<CefBrowser> browser,
@@ -224,7 +189,8 @@ bool BrowserHandler::GetScreenPoint(CefRefPtr<CefBrowser> browser,
 void BrowserHandler::OnPopupShow(CefRefPtr<CefBrowser> browser, bool show) {
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetBool("show", show);
-  this->SendRpcRequest(browser, "OnPopupShow", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnPopupShow", arguments);
 }
 
 void BrowserHandler::OnPopupSize(CefRefPtr<CefBrowser> browser,
@@ -236,14 +202,15 @@ void BrowserHandler::OnPopupSize(CefRefPtr<CefBrowser> browser,
   rectangle->SetInt("width", rect.width);
   rectangle->SetInt("height", rect.height);
   arguments->SetDictionary("rectangle", rectangle);
-  this->SendRpcRequest(browser, "OnPopupSize", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnPopupSize", arguments);
 }
 
 void BrowserHandler::OnTitleChange(CefRefPtr<CefBrowser> browser,
                                    const CefString& title) {
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetString("title", title);
-  this->SendRpcRequest(browser, "OnTitleChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnTitleChange", arguments);
 }
 
 void BrowserHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
@@ -253,7 +220,8 @@ void BrowserHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
   arguments->SetString("frameId", frame->GetIdentifier());
   arguments->SetBool("isMainFrame", frame->IsMain());
   arguments->SetString("url", url);
-  this->SendRpcRequest(browser, "OnAddressChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnAddressChange", arguments);
 }
 
 bool BrowserHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
@@ -266,7 +234,8 @@ bool BrowserHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
   arguments->SetString("message", message);
   arguments->SetString("source", source);
   arguments->SetInt("line", line);
-  this->SendRpcRequest(browser, "OnConsoleMessage", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnConsoleMessage", arguments);
   return true;
 }
 
@@ -274,7 +243,8 @@ void BrowserHandler::OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
                                              double progress) {
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetDouble("progress", progress);
-  this->SendRpcRequest(browser, "OnLoadingProgressChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnLoadingProgressChange", arguments);
 }
 
 void BrowserHandler::OnFaviconURLChange(
@@ -286,7 +256,8 @@ void BrowserHandler::OnFaviconURLChange(
     iconUrlsList->SetString(iconUrlsList->GetSize(), url);
   }
   arguments->SetList("iconUrls", iconUrlsList);
-  this->SendRpcRequest(browser, "OnFaviconUrlChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnFaviconUrlChange", arguments);
 }
 
 bool BrowserHandler::OnCursorChange(CefRefPtr<CefBrowser> browser,
@@ -312,7 +283,8 @@ bool BrowserHandler::OnCursorChange(CefRefPtr<CefBrowser> browser,
     customCursorInfo->SetBinary("imageBuffer", imageBuffer);
     arguments->SetDictionary("customCursorInfo", customCursorInfo);
   }
-  this->SendRpcRequest(browser, "OnCursorChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(),
+                                     "OnCursorChange", arguments);
   return true;
 }
 
@@ -323,7 +295,7 @@ bool BrowserHandler::DoClose(CefRefPtr<CefBrowser> browser) {
 void BrowserHandler::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   this->MarkDestroyed();
   browserProcessHandler->RemoveBrowserHandler(browser->GetIdentifier());
-  this->SendRpcRequest(browser, "OnBeforeClose");
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnBeforeClose");
 }
 
 bool BrowserHandler::OnBeforePopup(
@@ -345,7 +317,7 @@ bool BrowserHandler::OnBeforePopup(
   arguments->SetString("targetFrameName", target_frame_name);
   arguments->SetInt("targetDisposition", static_cast<int>(target_disposition));
   arguments->SetBool("userGesture", user_gesture);
-  this->SendRpcRequest(browser, "OnBeforePopup", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnBeforePopup", arguments);
   return true;
 }
 
@@ -374,7 +346,7 @@ bool BrowserHandler::OnBeforeBrowse(
   arguments->SetInt("transitionType",
                     static_cast<int>(request->GetTransitionType()));
   arguments->SetInt("resourceType", static_cast<int>(request->GetResourceType()));
-  this->SendRpcRequest(browser, "OnBeforeBrowse", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnBeforeBrowse", arguments);
   return false;
 }
 
@@ -388,12 +360,12 @@ bool BrowserHandler::OnOpenURLFromTab(
   arguments->SetString("targetUrl", target_url);
   arguments->SetInt("targetDisposition", static_cast<int>(target_disposition));
   arguments->SetBool("userGesture", user_gesture);
-  this->SendRpcRequest(browser, "OnOpenUrlFromTab", arguments);  
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnOpenUrlFromTab", arguments);  
   return true;
 }
 
 void BrowserHandler::OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) {
-  this->SendRpcRequest(browser, "OnRenderProcessResponsive");
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnRenderProcessResponsive");
 }
 
 void BrowserHandler::OnRenderProcessTerminated(
@@ -405,18 +377,18 @@ void BrowserHandler::OnRenderProcessTerminated(
   arguments->SetInt("status", static_cast<int>(status));
   arguments->SetInt("errorCode", error_code);
   arguments->SetString("errorString", error_string);
-  this->SendRpcRequest(browser, "OnRenderProcessTerminated", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnRenderProcessTerminated", arguments);
 }
 
 bool BrowserHandler::OnRenderProcessUnresponsive(
     CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefUnresponsiveProcessCallback> callback) {
-  this->SendRpcRequest(browser, "OnRenderProcessUnresponsive");
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnRenderProcessUnresponsive");
   return true;
 }
 
 void BrowserHandler::OnRenderViewReady(CefRefPtr<CefBrowser> browser) {
-  this->SendRpcRequest(browser, "OnRenderViewReady");
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnRenderViewReady");
 }
 
 void BrowserHandler::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
@@ -446,7 +418,7 @@ bool BrowserHandler::RunContextMenu(
   }
   arguments->SetList("commands", commandsList);
   std::optional<CefString> requestId =
-      this->SendRpcRequest(browser, "RunContextMenu", arguments);
+      browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "RunContextMenu", arguments);
   if (!requestId.has_value()) {
     return false;
   }
@@ -468,7 +440,7 @@ bool BrowserHandler::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetInt("commandId", commandId);
   arguments->SetInt("eventFlags", eventFlags);
-  this->SendRpcRequest(browser, "OnContextMenuCommand", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnContextMenuCommand", arguments);
   return true;
 }
 
@@ -480,7 +452,7 @@ void BrowserHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
   arguments->SetBool("isLoading", isLoading);
   arguments->SetBool("canGoBack", canGoBack);
   arguments->SetBool("canGoForward", canGoForward);
-  this->SendRpcRequest(browser, "OnLoadingStateChange", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnLoadingStateChange", arguments);
 }
 
 void BrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> browser,
@@ -490,7 +462,7 @@ void BrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> browser,
   arguments->SetString("frameId", frame->GetIdentifier());
   arguments->SetBool("isMainFrame", frame->IsMain());
   arguments->SetInt("transitionType", static_cast<int>(transition_type));
-  this->SendRpcRequest(browser, "OnLoadStart", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnLoadStart", arguments);
 }
 
 void BrowserHandler::OnLoadEnd(CefRefPtr<CefBrowser> browser,
@@ -500,7 +472,7 @@ void BrowserHandler::OnLoadEnd(CefRefPtr<CefBrowser> browser,
   arguments->SetString("frameId", frame->GetIdentifier());
   arguments->SetBool("isMainFrame", frame->IsMain());
   arguments->SetInt("httpStatusCode", httpStatusCode);
-  this->SendRpcRequest(browser, "OnLoadEnd", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnLoadEnd", arguments);
 }
 
 void BrowserHandler::OnLoadError(CefRefPtr<CefBrowser> browser,
@@ -514,14 +486,14 @@ void BrowserHandler::OnLoadError(CefRefPtr<CefBrowser> browser,
   arguments->SetInt("errorCode", errorCode);
   arguments->SetString("errorText", errorText);
   arguments->SetString("failedUrl", failedUrl);
-  this->SendRpcRequest(browser, "OnLoadError", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnLoadError", arguments);
 }
 
 bool BrowserHandler::OnTooltip(CefRefPtr<CefBrowser> browser,
                                CefString& text) {
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetString("text", text);
-  this->SendRpcRequest(browser, "OnTooltip", arguments);
+  browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnTooltip", arguments);
   return true;
 }
 
@@ -558,7 +530,7 @@ bool BrowserHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
   downloadItem->SetString("mimeType", download_item->GetMimeType());
   arguments->SetDictionary("downloadItem", downloadItem);
   std::optional<CefString> requestId =
-      this->SendRpcRequest(browser, "OnBeforeDownload", arguments);
+      browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnBeforeDownload", arguments);
   if (!requestId.has_value()) {
     return false;
   }
@@ -606,7 +578,7 @@ void BrowserHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
                           download_item->GetContentDisposition());
   downloadItem->SetString("mimeType", download_item->GetMimeType());
   arguments->SetDictionary("downloadItem", downloadItem);
-  std::optional<CefString> requestId = this->SendRpcRequest(browser, "OnDownloadUpdated", arguments);
+  std::optional<CefString> requestId = browserProcessHandler->SendRequest("Browser", browser->GetIdentifier(), "OnDownloadUpdated", arguments);
   if (!requestId.has_value()) {
     return;
   }

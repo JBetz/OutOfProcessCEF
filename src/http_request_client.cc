@@ -8,21 +8,6 @@ HttpRequestClient::HttpRequestClient(BrowserProcessHandler* handler,
                                      int httpRequestId)
     : handler(handler), httpRequestId(httpRequestId) {}
 
-void HttpRequestClient::SendRpcRequest(
-    std::string methodName,
-    CefRefPtr<CefDictionaryValue> arguments) {
-  CefString requestId = uuid_to_string(CreateUuid());
-  CefRefPtr<CefValue> request = CefValue::Create();
-  CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
-  payload->SetString("id", requestId);
-  payload->SetString("class", "HttpRequest");
-  payload->SetString("method", methodName);
-  payload->SetInt("instanceId", httpRequestId);
-  payload->SetDictionary("arguments", arguments);
-  request->SetDictionary(payload);
-  CefString jsonRequest = CefWriteJSON(request, JSON_WRITER_DEFAULT);
-  handler->SendMessage(jsonRequest);
-}
 
 void HttpRequestClient::OnRequestComplete(CefRefPtr<CefURLRequest> request) {
   handler->RemoveHttpRequest(httpRequestId);
@@ -40,11 +25,11 @@ void HttpRequestClient::OnRequestComplete(CefRefPtr<CefURLRequest> request) {
       headers->SetString(k, v);
     }
     arguments->SetDictionary("headers", headers);
-    this->SendRpcRequest("OnResponse", arguments);
+    handler->SendRequest("HttpRequest", httpRequestId, "OnResponse", arguments);
   } else {
     arguments->SetInt("requestStatus", request->GetRequestStatus());
     arguments->SetInt("errorCode", request->GetRequestError());
-    this->SendRpcRequest("OnError", arguments);
+    handler->SendRequest("HttpRequest", httpRequestId, "OnError", arguments);
   }
 }
 
@@ -53,7 +38,8 @@ void HttpRequestClient::OnDownloadData(CefRefPtr<CefURLRequest> request,
                                        size_t data_length) {
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
   arguments->SetBinary("data", CefBinaryValue::Create(data, data_length));
-  this->SendRpcRequest("OnData", arguments);
+  handler->SendRequest("HttpRequest", httpRequestId, 
+                       "OnDownloadData", arguments);
 }
 
 bool HttpRequestClient::GetAuthCredentials(bool isProxy,

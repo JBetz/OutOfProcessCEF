@@ -57,10 +57,12 @@ public:
   void RemoveHttpRequest(int httpRequestId);
 
   // Outgoing RPC messages.
-  void SendMessage(std::string payload);
+  CefString SendRequest(CefString className, int instanceId, CefString methodName, CefRefPtr<CefDictionaryValue> arguments);
+  CefString SendRequest(CefString className, int instanceId, CefString methodName);
   void SendResponse(const CefString& requestId, CefRefPtr<CefValue> returnValue);
   void SendErrorResponse(const CefString& requestId, const std::string& message);
   void SendLogMessage(const SDL_LogPriority level, const std::string& message);
+  void SendMessage(const CefString& payload);
 
   // RPC threads, need to be static.
   static int RpcReceiveThread(void* browserProcessHandlerPtr);

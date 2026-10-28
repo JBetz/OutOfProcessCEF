@@ -275,8 +275,30 @@ void BrowserProcessHandler::Browser_GetFrameRateRpc(
   this->SendResponse(requestId, returnValue);
 }
 
-void BrowserProcessHandler::SendMessage(std::string payload) {
-  outgoingMessageQueue.push(payload);
+void BrowserProcessHandler::SendMessage(const CefString& payload) {
+  outgoingMessageQueue.push(payload.ToString());
+}
+
+CefString BrowserProcessHandler::SendRequest(CefString className, int instanceId, CefString methodName, CefRefPtr<CefDictionaryValue> arguments) {
+  CefString requestId = uuid_to_string(CreateUuid());
+  CefRefPtr<CefValue> request = CefValue::Create();
+  CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
+  payload->SetString("id", requestId);
+  payload->SetString("class", className);
+  payload->SetInt("instanceId", instanceId);
+  payload->SetString("method", methodName);
+  payload->SetDictionary("arguments", arguments);
+  request->SetDictionary(payload);
+  CefString jsonRequest = CefWriteJSON(request, JSON_WRITER_DEFAULT);
+  this->SendMessage(jsonRequest);
+  return requestId;
+}
+
+CefString BrowserProcessHandler::SendRequest(
+    CefString className,
+    int instanceId,
+    CefString methodName) {
+  return this->SendRequest(className, instanceId, methodName, CefDictionaryValue::Create());
 }
 
 void BrowserProcessHandler::SendResponse(const CefString& requestId,
@@ -311,18 +333,11 @@ void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
 void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
                                            const std::string& message) {
   SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.c_str());
-  auto request = CefDictionaryValue::Create();
-  request->SetString("id", uuid_to_string(CreateUuid()));
-  request->SetString("class", "Client");
-  request->SetString("method", "OnLogMessage");
-  request->SetInt("instanceId", 1);
   auto arguments = CefDictionaryValue::Create();
   arguments->SetInt("level", level);
   arguments->SetString("message", message);
-  request->SetDictionary("arguments", arguments);
-  auto root = CefValue::Create();
-  root->SetDictionary(request);
-  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
+  this->SendRequest("Client", 1,
+                    "OnLogMessage", arguments);
 }
 
 void BrowserProcessHandler::HandleRpcRequest(

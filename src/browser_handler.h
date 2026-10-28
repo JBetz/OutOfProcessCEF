@@ -31,11 +31,6 @@ class BrowserHandler : public CefClient,
   void MarkDestroyed();
   void SetPageRectangle(CefRect rectangle);
   void SetWindowOrigin(CefPoint point);
-  std::optional<CefString> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
-                                          std::string methodName,
-                                          CefRefPtr<CefDictionaryValue> arguments);
-  std::optional<CefString> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
-                                          std::string methodName);
 
   // CefClient:
   CefRefPtr<CefRenderHandler> GetRenderHandler() override;
