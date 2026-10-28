@@ -12,13 +12,19 @@ set(CEFPROCESSRUNNER_SRCS
   browser_handler.h
   browser_process_handler.cc
   browser_process_handler.h
+  browser_rpc_commands.cc
+  browser_rpc_commands.h
   # cached_resource_handler.cc  
   # cached_resource_handler.h
+  client_rpc_commands.cc
+  client_rpc_commands.h
   command_line_switches.cc
   command_line_switches.h
   guid_ext.hpp
   http_request_client.cc
   http_request_client.h
+  http_request_rpc_commands.cc
+  http_request_rpc_commands.h
   other_process_handler.cc
   other_process_handler.h
   process_handler.cc
@@ -27,6 +33,8 @@ set(CEFPROCESSRUNNER_SRCS
   render_process_handler.h
   # response_body_filter.cc
   # response_body_filter.h
+  rpc_command.cc
+  rpc_command.h
   rpc.hpp
   thread_safe_queue.hpp)
 set(CEFPROCESSRUNNER_SRCS_WINDOWS
@@ -62,7 +70,6 @@ if(OS_WINDOWS)
   target_include_directories(${CEF_TARGET} PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/SDL3/include
     ${CMAKE_SOURCE_DIR}/third_party/SDL3_net/include
-    ${CMAKE_SOURCE_DIR}/third_party/json/include
   )
 
   target_link_libraries(${CEF_TARGET}

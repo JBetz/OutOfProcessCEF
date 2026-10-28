@@ -16,7 +16,6 @@
 #include <include/cef_task.h>
 #include <include/cef_urlrequest.h>
 #include <include/wrapper/cef_closure_task.h>
-#include <json.hpp>
 
 #include "browser_handler.h"
 #include "browser_process_handler.h"
@@ -24,81 +23,11 @@
 #include "rpc.hpp"
 #include "thread_safe_queue.hpp"
 #include "http_request_client.h"
-
-using json = nlohmann::json;
+#include "client_rpc_commands.h"
+#include "browser_rpc_commands.h"
+#include "http_request_rpc_commands.h"
 
 const char kEvalMessage[] = "Eval";
-
-class DownloadImageCallback : public CefDownloadImageCallback {
- public:
-  DownloadImageCallback(BrowserProcessHandler* handler,
-                        const UUID& requestId,
-                        const std::string& imageUrl)
-      : handler(handler), requestId(requestId), imageUrl(imageUrl) {}
-
-  void OnDownloadImageFinished(const CefString& image_url,
-                               int http_status_code,
-                               CefRefPtr<CefImage> image_) override {
-    Browser_DownloadImageResponse arguments;
-    arguments.imageUrl = imageUrl;
-    arguments.httpStatusCode = http_status_code;
-
-    if (image_ && !image_->IsEmpty()) {
-      float scale_factor = 1.0f;
-      int pixel_width = 0;
-      int pixel_height = 0;
-
-      CefRefPtr<CefBinaryValue> binary =
-          image_->GetAsPNG(scale_factor, true, pixel_width, pixel_height);
-      if (binary && binary->GetSize() > 0) {
-        std::vector<uint8_t> data(binary->GetSize());
-        binary->GetData(data.data(), data.size(), 0);
-        PNGImageData image;
-        image.data = data;
-        image.width = pixel_width;
-        image.height = pixel_height;
-        arguments.images.push_back(image);
-      }
-    }
-
-    RpcResponse response;
-    response.requestId = requestId;
-    response.success = true;
-    response.returnValue = arguments;
-    json jsonResponse = response;
-
-    handler->SendMessage(jsonResponse.dump());
-  }
-
- private:
-  BrowserProcessHandler* handler;
-  UUID requestId;
-  std::string imageUrl;
-
-  IMPLEMENT_REFCOUNTING(DownloadImageCallback);
-};
-
-// Callback for CefFrame::GetSource
-class GetSourceStringVisitor : public CefStringVisitor {
- public:
-  GetSourceStringVisitor(BrowserProcessHandler* handler, const UUID& requestId)
-      : handler(handler), requestId(requestId) {}
-
-  void Visit(const CefString& string) override {
-    RpcResponse response;
-    response.requestId = requestId;
-    response.success = true;
-    response.returnValue = string.ToString();
-    json jsonResponse = response;
-    handler->SendMessage(jsonResponse.dump());
-  }
-
- private:
-  BrowserProcessHandler* handler;
-  UUID requestId;
-
-  IMPLEMENT_REFCOUNTING(GetSourceStringVisitor);
-};
 
 BrowserProcessHandler::BrowserProcessHandler(
     int serverPort,
@@ -228,7 +157,7 @@ void BrowserProcessHandler::OnContextInitialized() {
   }
 }
 
-void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
+void BrowserProcessHandler::Client_CreateBrowserRpc(const CefString& requestId,
                                                     const CefString& url,
                                                     const CefPoint& windowOrigin,
                                                     const CefRect& rectangle,
@@ -264,12 +193,9 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
     browserEntries[browserId] = {handler, browser};
     SDL_Log("Created browser on UI thread; id=%d url=%s", browserId,
             url.ToString().c_str());
-    RpcResponse response;
-    response.requestId = requestId;
-    response.success = true;
-    response.returnValue = browserId;
-    json j = response;
-    this->SendMessage(j.dump());
+    CefRefPtr<CefValue> returnValue = CefValue::Create();
+    returnValue->SetInt(browserId);
+    this->SendResponse(requestId, returnValue);
     handler->MarkCreated();
   } else {
     SDL_Log("CreateBrowserSync returned null");
@@ -277,41 +203,39 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const UUID& requestId,
 }
 
 void BrowserProcessHandler::Client_CreateHttpRequestRpc(
-    const UUID& requestId,
-    Client_CreateHttpRequest args) {
+    const CefString& requestId,
+    const CefString& url,
+    const CefString& method,
+    const std::optional<CefRefPtr<CefDictionaryValue>> headers,
+    const std::optional<CefString>& body) {
   int httpRequestId = nextHttpRequestId++;
-
   CefRefPtr<CefRequest> cefRequest = CefRequest::Create();
-  cefRequest->SetURL(args.url);
-  cefRequest->SetMethod(args.method);
-  
-  if (args.body.has_value()) {
-    std::string bodyString = args.body->dump();
+  cefRequest->SetURL(url);
+  cefRequest->SetMethod(method);
+  if (body.has_value()) {
     CefRefPtr<CefPostData> postData = CefPostData::Create();
     CefRefPtr<CefPostDataElement> element = CefPostDataElement::Create();
-    element->SetToBytes(bodyString.size(), bodyString.data());
+    element->SetToBytes(body->size(), body->ToString().c_str());
     postData->AddElement(element);
     cefRequest->SetPostData(postData);
   }
-
-  if (args.headers.has_value()) {
-    for (const auto& [k, v] : args.headers.value()) {
-      cefRequest->SetHeaderByName(k.c_str(), v.c_str(), true);
+  if (headers.has_value()) {
+    CefRefPtr<CefDictionaryValue> headersDictionary =
+        headers.value();
+    std::vector<CefString> keyList;
+    headersDictionary->GetKeys(keyList);
+    for (const CefString& key : keyList) {
+      cefRequest->SetHeaderByName(key, headersDictionary->GetString(key), true);
     }
   }
-
   CefRefPtr<HttpRequestClient> client =
       new HttpRequestClient(this, httpRequestId);
   CefRefPtr<CefURLRequest> urlRequest =
       CefURLRequest::Create(cefRequest, client, CefRequestContext::GetGlobalContext());
   httpRequestEntries[httpRequestId] = urlRequest;
-
-  RpcResponse response;
-  response.requestId = requestId;
-  response.success = true;
-  response.returnValue = httpRequestId;
-  json jsonResponse = response;
-  this->SendMessage(jsonResponse.dump());
+  CefRefPtr<CefValue> returnValue = CefValue::Create();
+  returnValue->SetInt(httpRequestId);
+  this->SendResponse(requestId, returnValue);
 }
 
 void BrowserProcessHandler::Client_ShutdownRpc() {
@@ -335,393 +259,169 @@ void BrowserProcessHandler::Browser_CloseRpc(
 
 void BrowserProcessHandler::Browser_TryCloseRpc(
     const CefRefPtr<CefBrowser> browser,
-    const UUID& requestId) {
+    const CefString& requestId) {
   bool canClose = browser->GetHost()->TryCloseBrowser();
-  RpcResponse response;
-  response.requestId = requestId;
-  response.returnValue = canClose;
-  json jsonResponse = response;
-  this->SendMessage(jsonResponse.dump());
+  CefRefPtr<CefValue> returnValue = CefValue::Create();
+  returnValue->SetBool(canClose);
+  this->SendResponse(requestId, returnValue);
 }
 
 void BrowserProcessHandler::Browser_GetFrameRateRpc(
     const CefRefPtr<CefBrowser> browser,
-     const UUID& requestId) {
+    const CefString& requestId) {
   int frameRate = browser->GetHost()->GetWindowlessFrameRate();
-  RpcResponse response;
-  response.requestId = requestId;
-  response.success = true;
-  response.returnValue = frameRate;
-  json jsonResponse = response;
-  this->SendMessage(jsonResponse.dump());
+  CefRefPtr<CefValue> returnValue = CefValue::Create();
+  returnValue->SetInt(frameRate);
+  this->SendResponse(requestId, returnValue);
 }
 
 void BrowserProcessHandler::SendMessage(std::string payload) {
   outgoingMessageQueue.push(payload);
 }
 
-void BrowserProcessHandler::SendErrorResponse(const UUID& requestId,
-                                             std::string message) {
-  RpcResponse response;
-  response.requestId = requestId;
-  response.success = false;
-  response.returnValue = message;
-  json jsonResponse = response;
-  this->SendMessage(jsonResponse.dump());
+void BrowserProcessHandler::SendResponse(const CefString& requestId,
+                                         CefRefPtr<CefValue> returnValue) {
+  auto response = CefDictionaryValue::Create();
+  response->SetString("requestId", requestId);
+  response->SetBool("success", true);
+  if (returnValue) {
+    response->SetValue("returnValue", returnValue);
+  } else {
+    response->SetNull("returnValue");
+  }
+  response->SetNull("error");
+  auto root = CefValue::Create();
+  root->SetDictionary(response);
+  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
+}
+
+void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
+                                              const std::string& errorMessage) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, errorMessage.c_str());
+  auto response = CefDictionaryValue::Create();
+  response->SetString("requestId", requestId);
+  response->SetBool("success", false);
+  response->SetNull("returnValue");
+  response->SetString("error", errorMessage);
+  auto root = CefValue::Create();
+  root->SetDictionary(response);
+  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
 }
 
 void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
                                            const std::string& message) {
-  RpcRequest request;
-  request.id = CreateUuid();
-  request.className = "Client";
-  request.methodName = "OnLogMessage";
-  request.instanceId = 1;
-  json args;
-  args["level"] = level;
-  args["message"] = message;
-  request.arguments = args;
-  json j = request;
-  this->SendMessage(j.dump());
-  SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, "%s", message.c_str());
+  SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.c_str());
+  auto request = CefDictionaryValue::Create();
+  request->SetString("id", uuid_to_string(CreateUuid()));
+  request->SetString("class", "Client");
+  request->SetString("method", "OnLogMessage");
+  request->SetInt("instanceId", 1);
+  auto arguments = CefDictionaryValue::Create();
+  arguments->SetInt("level", level);
+  arguments->SetString("message", message);
+  request->SetDictionary("arguments", arguments);
+  auto root = CefValue::Create();
+  root->SetDictionary(request);
+  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
 }
 
-void BrowserProcessHandler::HandleRpcRequest(RpcRequest request) {
-  if (request.className == "Client") {
-    if (request.methodName == "CreateBrowser") {
-      Client_CreateBrowser arguments =
-          request.arguments.get<Client_CreateBrowser>();
-      HWND parentWindowHandle =
-          reinterpret_cast<HWND>(arguments.parentWindowHandle);
-      CefPostTask(
-          TID_UI,
-          base::BindOnce(&BrowserProcessHandler::Client_CreateBrowserRpc, this,
-                         request.id, arguments.url, arguments.windowOrigin, arguments.rectangle, parentWindowHandle, arguments.windowless, arguments.hardwareAccelerated, arguments.private_));
+void BrowserProcessHandler::HandleRpcRequest(
+    const CefString& requestId,
+    const CefString& className,
+    int instanceId,
+    const CefString& methodName,
+    CefRefPtr<CefDictionaryValue> arguments) {
+  if (className == "Client") {
+    auto cmd = RpcRegistry<ClientCommand>::Lookup(methodName);
+    if (!cmd) {
+      this->SendErrorResponse(requestId, "Unknown Client method: " + methodName.ToString());
       return;
     }
-
-    if (request.methodName == "CreateHttpRequest") {
-      Client_CreateHttpRequest args =
-          request.arguments.get<Client_CreateHttpRequest>();
-      CefPostTask(
-          TID_UI,
-          base::BindOnce(&BrowserProcessHandler::Client_CreateHttpRequestRpc,
-                         this, request.id, std::move(args)));
+    auto err = cmd->Initialize(requestId, arguments);
+    if (err.has_value()) {
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
       return;
     }
-
-    if (request.methodName == "GetPendingCallbacks") {
-      std::vector<std::string> pendingCallbackUuids;
-      for (auto const& imap : pendingCallbacks) {
-        pendingCallbackUuids.push_back(uuid_to_string(imap.first));
-      }
-      RpcResponse response;
-      response.requestId = request.id;
-      response.success = true;
-      response.returnValue = pendingCallbackUuids;
-      json jsonResponse = response;
-      this->SendMessage(jsonResponse.dump());
-      return;
-    }
-
-    if (request.methodName == "CancelPendingCallback") {
-      Client_CancelPendingCallback args = request.arguments.get<Client_CancelPendingCallback>();
-      this->CancelPendingCallback(args.requestId);
-      return;
-    }
-
-    if (request.methodName == "Shutdown") {
-      CefPostTask(
-          TID_UI,
-          base::BindOnce(&BrowserProcessHandler::Client_ShutdownRpc, this));
-      return;
-    }
+    cmd->Execute(this);
+    return;
   }
 
-  if (request.className == "Browser") {
-    CefRefPtr<BrowserHandler> browserHandler =
-        this->GetBrowserHandler(request.instanceId);
-    if (!browserHandler) {
-      std::string message = "Browser handler for browser instance " +
-                            std::to_string(request.instanceId) + " not found.";
-      this->SendErrorResponse(request.id, message);
+  if (className == "Browser") {
+    CefRefPtr<CefBrowser> browser = GetBrowser(instanceId);
+    CefRefPtr<BrowserHandler> browserHandler = GetBrowserHandler(instanceId);
+    if (!browser || !browserHandler) {
+      this->SendErrorResponse(
+          requestId,
+          "Browser instance " + std::to_string(instanceId) + " not found");
       return;
     }
-    CefRefPtr<CefBrowser> browser = this->GetBrowser(request.instanceId);
-    if (!browser) {
-      std::string message = "Browser instance " +
-                            std::to_string(request.instanceId) + " not found.";
-      this->SendErrorResponse(request.id, message);
+    auto cmd = RpcRegistry<BrowserCommand>::Lookup(methodName);
+    if (!cmd) {
+      this->SendErrorResponse(requestId, "Unknown Browser method: " + methodName.ToString());
       return;
     }
-
-    if (request.methodName == "EvaluateJavaScript") {
-      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-      CefRefPtr<CefProcessMessage> message =
-          CefProcessMessage::Create(kEvalMessage);
-      json jsonRequest = request;
-      message->GetArgumentList()->SetString(0, jsonRequest.dump());
-      frame->SendProcessMessage(PID_RENDERER, message);
-      return;
-    };
-
-    if (request.methodName == "Reload") {
-      browser->Reload();
+    auto err = cmd->Initialize(requestId, arguments);
+    if (err.has_value()) {
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
       return;
     }
-
-    if (request.methodName == "Focus") {
-      Browser_Focus arguments = request.arguments.get<Browser_Focus>();
-      browser->GetHost()->SetFocus(arguments.focus);
-      return;
-    }
-
-    if (request.methodName == "WasHidden") {
-      Browser_WasHidden arguments = request.arguments.get<Browser_WasHidden>();
-      browser->GetHost()->WasHidden(arguments.hidden);
-      return;
-    }
-
-    if (request.methodName == "LoadUrl") {
-      Browser_LoadUrl arguments = request.arguments.get<Browser_LoadUrl>();
-      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-      frame->LoadURL(arguments.url);
-      return;
-    }
-
-    if (request.methodName == "LoadRequest") {
-      Browser_LoadRequest arguments =
-          request.arguments.get<Browser_LoadRequest>();
-      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-      CefRefPtr<CefRequest> cefRequest = CefRequest::Create();
-      cefRequest->SetURL(arguments.url);
-      cefRequest->SetMethod(arguments.method);
-      if (arguments.postData.size() > 0) {
-        CefRefPtr<CefPostData> postData = CefPostData::Create();
-        for (const auto& elementArguments : arguments.postData) {
-          CefRefPtr<CefPostDataElement> element = CefPostDataElement::Create();
-          switch (elementArguments.type) {
-            case CefPostDataElement::Type::PDE_TYPE_EMPTY:
-              element->SetToEmpty();
-              break;
-            case CefPostDataElement::Type::PDE_TYPE_FILE:
-              element->SetToFile(elementArguments.fileName.value());
-              break;
-            case CefPostDataElement::Type::PDE_TYPE_BYTES:
-              element->SetToBytes(elementArguments.bytes->size(), elementArguments.bytes->data());
-              break;
-          }
-          postData->AddElement(element);
-        }
-        cefRequest->SetPostData(postData);
-      } 
-      for (const auto& [key, value] : arguments.headerMap) {
-        cefRequest->SetHeaderByName(key, value, true);
-      }
-      frame->LoadRequest(cefRequest);
-      return;
-    }
-
-    if (request.methodName == "SetWindowOrigin") {
-      Browser_SetWindowOrigin arguments = request.arguments.get<Browser_SetWindowOrigin>();
-      browserHandler->SetWindowOrigin(arguments.origin);
-      return;
-    }
-
-    if (request.methodName == "WasResized") {
-      Browser_WasResized arguments =
-          request.arguments.get<Browser_WasResized>();
-      browserHandler->SetPageRectangle(arguments.rectangle);
-      browser->GetHost()->WasResized();
-      return;
-    }
-
-    if (request.methodName == "Cut") {
-      browser->GetFocusedFrame()->Cut();
-      return;
-    }
-
-    if (request.methodName == "Copy") {
-      browser->GetFocusedFrame()->Copy();
-      return;
-    }
-
-    if (request.methodName == "Paste") {
-      browser->GetFocusedFrame()->Paste();
-      return;
-    }
-
-    if (request.methodName == "Delete") {
-      browser->GetFocusedFrame()->Delete();
-      return;
-    }
-
-    if (request.methodName == "Undo") {
-      browser->GetFocusedFrame()->Undo();
-      return;
-    }
-
-    if (request.methodName == "Redo") {
-      browser->GetFocusedFrame()->Redo();
-      return;
-    }
-
-    if (request.methodName == "SelectAll") {
-      browser->GetFocusedFrame()->SelectAll();
-      return;
-    }
-
-    if (request.methodName == "OnMouseClick") {
-      Browser_OnMouseClick arguments =
-          request.arguments.get<Browser_OnMouseClick>();
-      browser->GetHost()->SendMouseClickEvent(
-          arguments.event,
-          static_cast<CefBrowserHost::MouseButtonType>(arguments.button),
-          arguments.mouseUp, arguments.clickCount);
-      return;
-    }
-
-    if (request.methodName == "OnMouseMove") {
-      Browser_OnMouseMove arguments =
-          request.arguments.get<Browser_OnMouseMove>();
-      browser->GetHost()->SendMouseMoveEvent(arguments.event,
-                                             arguments.mouseLeave);
-      return;
-    }
-
-    if (request.methodName == "OnMouseWheel") {
-      Browser_OnMouseWheel arguments =
-          request.arguments.get<Browser_OnMouseWheel>();
-      browser->GetHost()->SendMouseWheelEvent(arguments.event, arguments.deltaX,
-                                              arguments.deltaY);
-      return;
-    }
-
-    if (request.methodName == "OnKeyboardEvent") {
-      Browser_OnKeyboardEvent arguments =
-          request.arguments.get<Browser_OnKeyboardEvent>();
-      CefKeyEvent event;
-      event.size = 28;
-      event.type = arguments.type;
-      event.modifiers = arguments.modifiers;
-      event.windows_key_code = arguments.windowsKeyCode;
-      event.native_key_code = arguments.nativeKeyCode;
-      event.is_system_key = arguments.isSystemKey;
-      event.character = 0;
-      if (arguments.character.has_value()) {
-        event.character = arguments.character.value()[0];
-      }
-      event.unmodified_character = 0;
-      if (arguments.unmodifiedCharacter.has_value()) {
-        event.unmodified_character = arguments.unmodifiedCharacter.value()[0];
-      }
-      event.focus_on_editable_field = arguments.focusOnEditableField ? 1 : 0;
-      browser->GetHost()->SendKeyEvent(event);
-      return;
-    }
-
-    if (request.methodName == "Close") {
-      Browser_Close arguments = request.arguments.get<Browser_Close>();
-      CefPostTask(TID_UI,
-                  base::BindOnce(&BrowserProcessHandler::Browser_CloseRpc, this,
-                                 browser, arguments.forceClose));
-      return;
-    }
-
-    if (request.methodName == "TryClose") {
-      CefPostTask(TID_UI,
-                  base::BindOnce(&BrowserProcessHandler::Browser_TryCloseRpc,
-                                 this, browser, request.id));
-      return;
-    }
-
-    if (request.methodName == "StartDownload") {
-      Browser_StartDownload arguments = request.arguments.get<Browser_StartDownload>();
-      browser->GetHost()->StartDownload(arguments.url);
-      return;
-   }
-
-    if (request.methodName == "DownloadImage") {
-      Browser_DownloadImage arguments =
-          request.arguments.get<Browser_DownloadImage>();
-      CefRefPtr<DownloadImageCallback> callback =
-          new DownloadImageCallback(this, request.id, arguments.imageUrl);
-      browser->GetHost()->DownloadImage(
-          arguments.imageUrl, arguments.isFavicon,
-          static_cast<uint32_t>(arguments.maxImageSize), arguments.bypassCache,
-          callback);
-      return;
-    }
-
-    if (request.methodName == "GetSource") {
-      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-      CefRefPtr<GetSourceStringVisitor> visitor =
-          new GetSourceStringVisitor(this, request.id);
-      frame->GetSource(visitor);
-      return;
-    }
-
-    if (request.methodName == "GetText") {
-      CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-      CefRefPtr<GetSourceStringVisitor> visitor =
-          new GetSourceStringVisitor(this, request.id);
-      frame->GetText(visitor);
-      return;
-    }
-
-    if (request.methodName == "GetFrameRate") {
-      CefPostTask(TID_UI,
-                  base::BindOnce(&BrowserProcessHandler::Browser_GetFrameRateRpc,
-                                 this, browser, request.id));
-      return;
-    }
-
-    if (request.methodName == "SetFrameRate") {
-        Browser_SetFrameRate arguments =
-          request.arguments.get<Browser_SetFrameRate>();
-        browser->GetHost()->SetWindowlessFrameRate(arguments.frameRate);
-        return;
-    }
+    cmd->Execute(this, browser, browserHandler);
+    return;
   }
 
-  if (request.className == "HttpRequest") {
-    auto it = httpRequestEntries.find(request.instanceId);
+  if (className == "HttpRequest") {
+    auto it = httpRequestEntries.find(instanceId);
     if (it == httpRequestEntries.end()) {
-      SDL_Log("RpcWorkerThread: HttpRequest instance %d not found",
-              request.instanceId);
+      this->SendErrorResponse(
+          requestId,
+          "HttpRequest instance " + std::to_string(instanceId) + " not found");
       return;
     }
-
-    if (request.methodName == "Cancel") {
-      CefPostTask(TID_UI, base::BindOnce(
-                              &BrowserProcessHandler::HttpRequest_CancelRpc,
-                              this, request.instanceId));
+    auto cmd = RpcRegistry<HttpRequestCommand>::Lookup(methodName);
+    if (!cmd) {
+      this->SendErrorResponse(requestId, "Unknown HttpRequest method: " + methodName.ToString());
       return;
     }
+    auto err = cmd->Initialize(requestId, arguments);
+    if (err.has_value()) {
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
+      return;
+    }
+    cmd->Execute(this, it->second);
+    return;
   }
 
-  SDL_Log("RpcWorkerThread: unknown message method '%s'",
-          request.methodName.c_str());
+  this->SendErrorResponse(requestId, "Unknown RPC target class: " + className.ToString());
 }
 
-void BrowserProcessHandler::RegisterPendingCallback(const UUID& requestId,
+void BrowserProcessHandler::RegisterPendingCallback(const CefString& requestId,
                                                     PendingCallback callback) {
   SDL_LockMutex(this->pendingCallbacksMutex);
   this->pendingCallbacks[requestId] = std::move(callback);
   SDL_UnlockMutex(this->pendingCallbacksMutex);
 }
 
-void BrowserProcessHandler::CancelPendingCallback(const UUID& requestId) {
+void BrowserProcessHandler::CancelPendingCallback(const CefString& requestId) {
   SDL_LockMutex(this->pendingCallbacksMutex);
   this->pendingCallbacks.erase(requestId);
   SDL_UnlockMutex(this->pendingCallbacksMutex);
 }
 
-void BrowserProcessHandler::HandleRpcResponse(RpcResponse response) {
+std::map<CefString, PendingCallback> BrowserProcessHandler::GetPendingCallbacks() {
+  SDL_LockMutex(this->pendingCallbacksMutex);
+  std::map<CefString, PendingCallback> copy = this->pendingCallbacks;
+  SDL_UnlockMutex(this->pendingCallbacksMutex);
+  return copy;
+}
+
+void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
+                                              bool success,
+                                              CefRefPtr<CefValue> returnValue,
+                                              CefRefPtr<CefValue> error) {
   PendingCallback callback = nullptr;
 
   SDL_LockMutex(this->pendingCallbacksMutex);
-  auto it = this->pendingCallbacks.find(response.requestId);
+  auto it = this->pendingCallbacks.find(requestId);
   if (it != this->pendingCallbacks.end()) {
     callback = std::move(it->second);
     this->pendingCallbacks.erase(it);
@@ -729,12 +429,12 @@ void BrowserProcessHandler::HandleRpcResponse(RpcResponse response) {
   SDL_UnlockMutex(this->pendingCallbacksMutex);
 
   if (callback) {
-    if (response.success) {
+    if (success) {
       // Execute callback (which handles posting to TID_UI if needed)
-      callback(response.returnValue);
+      callback(returnValue);
     } else {
       SDL_Log("RPC response error for request: %s",
-              response.error.dump().c_str());
+              error->GetString().ToString().c_str());
     }
   }
 }
@@ -775,44 +475,44 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
                           recvBuffer.begin() + 4 + msgLen);
       recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
 
-      json jsonMessage;
-      try {
-        jsonMessage = json::parse(jsonMessageString);
-      } catch (const nlohmann::json::parse_error& e_parse) {
+      
+      cef_json_parser_options_t options = JSON_PARSER_ALLOW_TRAILING_COMMAS;
+      CefString errorMessageOut;
+      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(CefString(jsonMessageString),
+                                               options, errorMessageOut);
+      if (!jsonMessage) {
         size_t previewLen = std::min<size_t>(jsonMessageString.size(), 256);
         std::string preview = jsonMessageString.substr(0, previewLen);
         SDL_Log(
-            "RpcReceiveThread: JSON parse_error: %s at byte=%u payload_preview='%s'",
-            e_parse.what(), static_cast<unsigned int>(e_parse.byte),
-            preview.c_str());
-        continue;
-      } catch (const std::exception& e) {
-        SDL_Log("RpcReceiveThread: JSON exception: %s", e.what());
+            "RpcReceiveThread: JSON parse_error: %s, payload_preview='%s'",
+                errorMessageOut.ToString().c_str(),
+                preview.c_str());
         continue;
       }
 
+      CefRefPtr<CefDictionaryValue> jsonMessageDictionary = jsonMessage->GetDictionary();
       try {
-        if (!jsonMessage.contains("requestId")) {
-          handler->HandleRpcRequest(jsonMessage.get<RpcRequest>());
+        if (jsonMessageDictionary->HasKey("requestId")) {
+          CefString requestId = jsonMessageDictionary->GetString("requestId");
+          bool success = jsonMessageDictionary->GetBool("success");
+          CefRefPtr<CefValue> returnValue = jsonMessageDictionary->GetValue("returnValue");
+          CefRefPtr<CefValue> error = jsonMessageDictionary->GetValue("error");
+          handler->HandleRpcResponse(requestId, success, returnValue, error);
         } else {
-          handler->HandleRpcResponse(jsonMessage.get<RpcResponse>());
-        }
-      } catch (const nlohmann::json::exception& e) {
-        SDL_Log("RpcReceiveThread: JSON exception during dispatch: %s", e.what());
-        try {
-          if (jsonMessage.contains("id")) {
-            UUID requestId;
-            from_json(jsonMessage.at("id"), requestId);
-            handler->SendErrorResponse(requestId, e.what());
-          }
-        } catch (...) {
-          SDL_Log("RpcReceiveThread: could not send error response");
+          CefString requestId = jsonMessageDictionary->GetString("id");
+          CefString className = jsonMessageDictionary->GetString("class");
+          int instanceId = jsonMessageDictionary->GetInt("instanceId");
+          CefString methodName = jsonMessageDictionary->GetString("method");
+          CefRefPtr<CefDictionaryValue> arguments =
+              jsonMessageDictionary->GetDictionary("arguments");
+          handler->HandleRpcRequest(requestId, className, instanceId,
+                                    methodName, arguments); 
         }
       } catch (const std::exception& e) {
         SDL_Log("RpcReceiveThread: exception during dispatch: %s", e.what());
       }
-    }  // end while (recvBuffer.size() >= 4)
-  }  // end while (true)
+    }
+  }
   return 0;
 }
 
@@ -847,14 +547,6 @@ int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
                  handler->windowMessageId, 0, 0);
   }
   return 0;
-}
-
-void BrowserProcessHandler::HttpRequest_CancelRpc(const int requestId) {
-  auto it = httpRequestEntries.find(requestId);
-  if (it != httpRequestEntries.end()) {
-    it->second->Cancel();
-    httpRequestEntries.erase(it);
-  }
 }
 
 void BrowserProcessHandler::RemoveHttpRequest(const int requestId) {

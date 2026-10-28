@@ -31,11 +31,11 @@ class BrowserHandler : public CefClient,
   void MarkDestroyed();
   void SetPageRectangle(CefRect rectangle);
   void SetWindowOrigin(CefPoint point);
-  std::optional<UUID> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
-                                     std::string methodName,
-                                     json arguments);
-  std::optional<UUID> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
-                                     std::string methodName);
+  std::optional<CefString> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
+                                          std::string methodName,
+                                          CefRefPtr<CefDictionaryValue> arguments);
+  std::optional<CefString> SendRpcRequest(CefRefPtr<CefBrowser> browser_,
+                                          std::string methodName);
 
   // CefClient:
   CefRefPtr<CefRenderHandler> GetRenderHandler() override;
@@ -78,6 +78,9 @@ class BrowserHandler : public CefClient,
   // CefDisplayHandler:
   void OnTitleChange(CefRefPtr<CefBrowser> browser,
                      const CefString& title) override;
+  void OnAddressChange(CefRefPtr<CefBrowser> browser,
+                       CefRefPtr<CefFrame> frame,
+                       const CefString& url) override;
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,
                         cef_log_severity_t level,
                         const CefString& message,

@@ -6,10 +6,11 @@
 #include "process_handler.h"
 #include "rpc.hpp"
 #include "thread_safe_queue.hpp"
+#include <functional>
 
 class BrowserHandler;
 
-using PendingCallback = std::function<void(const json&)>;
+using PendingCallback = std::function<void(CefRefPtr<CefValue>)>;
 
 class BrowserProcessHandler : public ProcessHandler, public CefBrowserProcessHandler {
 public:
@@ -30,24 +31,35 @@ public:
   void OnContextInitialized() override;
 
   // RPC handling.
-  void HandleRpcRequest(RpcRequest request);
-  void HandleRpcResponse(RpcResponse response);
-  void RegisterPendingCallback(const UUID& requestId, PendingCallback callback);
-  void CancelPendingCallback(const UUID& requestId);
+  void HandleRpcRequest(const CefString& requestId,
+                        const CefString& className,
+                        int instanceId,
+                        const CefString& methodName,
+                        CefRefPtr<CefDictionaryValue> arguments);
+  void HandleRpcResponse(const CefString& requestId, bool success, CefRefPtr<CefValue> returnValue, CefRefPtr<CefValue> error);
+  void RegisterPendingCallback(const CefString& requestId, PendingCallback callback);
+  void CancelPendingCallback(const CefString& requestId);
+  std::map<CefString, PendingCallback> GetPendingCallbacks(); 
 
   // Incoming RPC messages.
-  void Client_CreateBrowserRpc(const UUID& requestId, const CefString& url, const CefPoint& windowOrigin, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated, bool private_);
-  void Client_CreateHttpRequestRpc(const UUID& requestId, Client_CreateHttpRequest args);
+  void Client_CreateBrowserRpc(const CefString& requestId, const CefString& url, const CefPoint& windowOrigin, const CefRect& rectangle, HWND parentWindowHandle, bool windowless, bool hardwareAccelerated, bool private_);
+  void Client_CreateHttpRequestRpc(
+      const CefString& requestId,
+      const CefString& url,
+      const CefString& method,
+      const std::optional<CefRefPtr<CefDictionaryValue>> headers,
+      const std::optional<CefString>& body);
   void Client_ShutdownRpc();
   void Browser_CloseRpc(const CefRefPtr<CefBrowser> browser, bool forceClose);
-  void Browser_TryCloseRpc(const CefRefPtr<CefBrowser> browser, const UUID& requestId);
-  void Browser_GetFrameRateRpc(const CefRefPtr<CefBrowser> browser, const UUID& requestId);
+  void Browser_TryCloseRpc(const CefRefPtr<CefBrowser> browser, const CefString& requestId);
+  void Browser_GetFrameRateRpc(const CefRefPtr<CefBrowser> browser, const CefString& requestId);
   void HttpRequest_CancelRpc(int httpRequestId);
   void RemoveHttpRequest(int httpRequestId);
 
   // Outgoing RPC messages.
   void SendMessage(std::string payload);
-  void SendErrorResponse(const UUID& requestId, std::string message);
+  void SendResponse(const CefString& requestId, CefRefPtr<CefValue> returnValue);
+  void SendErrorResponse(const CefString& requestId, const std::string& message);
   void SendLogMessage(const SDL_LogPriority level, const std::string& message);
 
   // RPC threads, need to be static.
@@ -62,7 +74,7 @@ public:
   int windowMessageId;
   ThreadSafeQueue<std::string> outgoingMessageQueue;
   SDL_Mutex* pendingCallbacksMutex = nullptr;
-  std::map<UUID, PendingCallback> pendingCallbacks;
+  std::map<CefString, PendingCallback> pendingCallbacks;
   std::map<int, std::pair<CefRefPtr<BrowserHandler>, CefRefPtr<CefBrowser>>> browserEntries;
   std::map<int, CefRefPtr<CefURLRequest>> httpRequestEntries;
   int nextHttpRequestId = 1;

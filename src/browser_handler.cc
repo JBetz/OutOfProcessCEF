@@ -1,7 +1,7 @@
 #include "browser_handler.h"
+
 #include <SDL3/sdl.h>
 #include <include/cef_scheme.h>
-#include <rpc.h>
 #include "browser_process_handler.h"
 #include "rpc.hpp"
 
@@ -9,8 +9,7 @@
 #include <include/base/cef_bind.h>
 #include <include/base/cef_callback.h>
 #include <include/wrapper/cef_closure_task.h>
-
-using json = nlohmann::json;
+#include <include/cef_parser.h>
 
 BrowserHandler::BrowserHandler(BrowserProcessHandler* browserProcessHandler,
                                CefPoint windowOrigin,
@@ -35,10 +34,10 @@ void BrowserHandler::SetWindowOrigin(CefPoint point) {
   windowOrigin = point;
 }
 
-std::optional<UUID> BrowserHandler::SendRpcRequest(
+std::optional<CefString> BrowserHandler::SendRpcRequest(
     CefRefPtr<CefBrowser> browser,
     std::string methodName,
-    json arguments) {
+    CefRefPtr<CefDictionaryValue> arguments) {
   if (!createdAt.has_value()) {
     browserProcessHandler->SendLogMessage(SDL_LOG_PRIORITY_WARN,
         "Attempted to send RPC request '" + methodName +
@@ -51,21 +50,24 @@ std::optional<UUID> BrowserHandler::SendRpcRequest(
         "' but browser has been destroyed");
     return std::nullopt;
   }
-  RpcRequest request;
-  request.id = CreateUuid();
-  request.className = "Browser";
-  request.methodName = methodName;
-  request.instanceId = browser->GetIdentifier();
-  request.arguments = arguments;
-  json jsonRequest = request;
-  browserProcessHandler->SendMessage(jsonRequest.dump());
-  return request.id;
+  CefString requestId = uuid_to_string(CreateUuid());
+  CefRefPtr<CefValue> request = CefValue::Create();
+  CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
+  payload->SetString("id", requestId);
+  payload->SetString("class", "Browser");
+  payload->SetString("method", methodName);
+  payload->SetInt("instanceId", browser->GetIdentifier());
+  payload->SetDictionary("arguments", arguments);
+  request->SetDictionary(payload);
+  CefString jsonRequest = CefWriteJSON(request, JSON_WRITER_DEFAULT);
+  browserProcessHandler->SendMessage(jsonRequest);
+  return requestId;
 }
 
-std::optional<UUID> BrowserHandler::SendRpcRequest(
+std::optional<CefString> BrowserHandler::SendRpcRequest(
     CefRefPtr<CefBrowser> browser,
     std::string methodName) {
-  return this->SendRpcRequest(browser, methodName, json::object());
+  return this->SendRpcRequest(browser, methodName, CefDictionaryValue::Create());
 }
 
 CefRefPtr<CefRenderHandler> BrowserHandler::GetRenderHandler() {
@@ -105,12 +107,9 @@ bool BrowserHandler::OnProcessMessageReceived(
   if (!args || args->GetSize() == 0) {
     return false;
   }
-  if (args->GetType(0) == VTYPE_STRING) {
-    std::string payload = args->GetString(0).ToString();
-    browserProcessHandler->BrowserProcessHandler::SendMessage(payload);
-    return true;
-  }
-  return false;
+  std::string payload = CefWriteJSON(args->GetValue(0), JSON_WRITER_DEFAULT);
+  browserProcessHandler->BrowserProcessHandler::SendMessage(payload);
+  return true;
 }
 
 void BrowserHandler::GetViewRect(CefRefPtr<CefBrowser> browser,
@@ -154,17 +153,25 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     return;
   }
   
-  Browser_OnPaint arguments;
-  arguments.elementType = type;
-  arguments.width = width;
-  arguments.height = height;
-  arguments.sharedMemoryHandle = reinterpret_cast<uintptr_t>(duplicateHandle);
-  arguments.sharedMemorySize = bufferSize;
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("elementType", type);
+  arguments->SetInt("width", width);
+  arguments->SetInt("height", height);
+  arguments->SetInt("sharedMemoryHandle", reinterpret_cast<uintptr_t>(duplicateHandle));
+  arguments->SetInt("sharedMemorySize", bufferSize);
+  CefRefPtr<CefListValue> dirtyRectsList = CefListValue::Create();
   for (const auto& rect : dirtyRects) {
-    arguments.dirtyRects.push_back(rect);
+    CefRefPtr<CefDictionaryValue> rectangleDictionary = CefDictionaryValue::Create();
+    rectangleDictionary->SetInt("x", rect.x);
+    rectangleDictionary->SetInt("y", rect.y);
+    rectangleDictionary->SetInt("width", rect.width);
+    rectangleDictionary->SetInt("height", rect.height);
+    CefRefPtr<CefValue> rectangleDictionaryValue = CefValue::Create();
+    rectangleDictionaryValue->SetDictionary(rectangleDictionary);
+    dirtyRectsList->SetValue(dirtyRectsList->GetSize(), rectangleDictionaryValue);
   }
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnPaint", jsonArguments);
+  arguments->SetList("dirtyRects", dirtyRectsList);
+  this->SendRpcRequest(browser, "OnPaint", arguments);
 }
 
 void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
@@ -182,23 +189,21 @@ void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
     SDL_Log("Error duplicating shared texture: DuplicateHandle() call failed");
     return;
   }
-  Browser_OnAcceleratedPaint arguments;
-  arguments.elementType = type;
-  arguments.format = info.format;
-  arguments.sharedTextureHandle = reinterpret_cast<uintptr_t>(duplicateHandle);
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnAcceleratedPaint", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("elementType", type);
+  arguments->SetInt("format", info.format);
+  arguments->SetInt("sharedTextureHandle", reinterpret_cast<uintptr_t>(duplicateHandle));
+  this->SendRpcRequest(browser, "OnAcceleratedPaint", arguments);
 }
 
 void BrowserHandler::OnTextSelectionChanged(CefRefPtr<CefBrowser> browser,
                                             const CefString& selected_text,
                                             const CefRange& selected_range) {
-  Browser_OnTextSelectionChanged arguments;
-  arguments.selectedText = selected_text.ToString();
-  arguments.selectedRangeFrom = selected_range.from;
-  arguments.selectedRangeTo = selected_range.to;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnTextSelectionChanged", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("selectedText", selected_text);
+  arguments->SetInt("selectedRangeFrom", selected_range.from);
+  arguments->SetInt("selectedRangeTo", selected_range.to);
+  this->SendRpcRequest(browser, "OnTextSelectionChanged", arguments);
 }
 
 bool BrowserHandler::GetScreenInfo(CefRefPtr<CefBrowser> browser,
@@ -217,26 +222,38 @@ bool BrowserHandler::GetScreenPoint(CefRefPtr<CefBrowser> browser,
 }
 
 void BrowserHandler::OnPopupShow(CefRefPtr<CefBrowser> browser, bool show) {
-  Browser_OnPopupShow arguments;
-  arguments.show = show;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnPopupShow", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetBool("show", show);
+  this->SendRpcRequest(browser, "OnPopupShow", arguments);
 }
 
 void BrowserHandler::OnPopupSize(CefRefPtr<CefBrowser> browser,
                                  const CefRect& rect) {
-  Browser_OnPopupSize arguments;
-  arguments.rectangle = rect;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnPopupSize", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  CefRefPtr<CefDictionaryValue> rectangle = CefDictionaryValue::Create();
+  rectangle->SetInt("x", rect.x);
+  rectangle->SetInt("y", rect.y);
+  rectangle->SetInt("width", rect.width);
+  rectangle->SetInt("height", rect.height);
+  arguments->SetDictionary("rectangle", rectangle);
+  this->SendRpcRequest(browser, "OnPopupSize", arguments);
 }
 
 void BrowserHandler::OnTitleChange(CefRefPtr<CefBrowser> browser,
                                    const CefString& title) {
-  Browser_OnTitleChange arguments;
-  arguments.title = title.ToString();
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnTitleChange", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("title", title);
+  this->SendRpcRequest(browser, "OnTitleChange", arguments);
+}
+
+void BrowserHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
+                                     CefRefPtr<CefFrame> frame,
+                                     const CefString& url) {
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("frameId", frame->GetIdentifier());
+  arguments->SetBool("isMainFrame", frame->IsMain());
+  arguments->SetString("url", url);
+  this->SendRpcRequest(browser, "OnAddressChange", arguments);
 }
 
 bool BrowserHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
@@ -244,43 +261,58 @@ bool BrowserHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
                                       const CefString& message,
                                       const CefString& source,
                                       int line) {
-  Browser_OnConsoleMessage arguments;
-  arguments.level = static_cast<int>(level);
-  arguments.message = message.ToString();
-  arguments.source = source.ToString();
-  arguments.line = line;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnConsoleMessage", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("level", static_cast<int>(level));
+  arguments->SetString("message", message);
+  arguments->SetString("source", source);
+  arguments->SetInt("line", line);
+  this->SendRpcRequest(browser, "OnConsoleMessage", arguments);
   return true;
 }
 
 void BrowserHandler::OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
                                              double progress) {
-  Browser_OnLoadingProgressChange arguments;
-  arguments.progress = progress;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnLoadingProgressChange", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetDouble("progress", progress);
+  this->SendRpcRequest(browser, "OnLoadingProgressChange", arguments);
 }
 
 void BrowserHandler::OnFaviconURLChange(
     CefRefPtr<CefBrowser> browser,
     const std::vector<CefString>& icon_urls) {
-  Browser_OnFaviconUrlChange arguments;
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  CefRefPtr<CefListValue> iconUrlsList = CefListValue::Create();
   for (const auto& url : icon_urls) {
-    arguments.iconUrls.push_back(url.ToString());
+    iconUrlsList->SetString(iconUrlsList->GetSize(), url);
   }
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnFaviconUrlChange", jsonArguments);
+  arguments->SetList("iconUrls", iconUrlsList);
+  this->SendRpcRequest(browser, "OnFaviconUrlChange", arguments);
 }
 
 bool BrowserHandler::OnCursorChange(CefRefPtr<CefBrowser> browser,
                                     CefCursorHandle cursor,
                                     cef_cursor_type_t type,
                                     const CefCursorInfo& custom_cursor_info) {
-  Browser_OnCursorChange arguments;
-  arguments.cursorType = static_cast<int>(type);
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnCursorChange", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("cursor", reinterpret_cast<uintptr_t>(cursor));
+  arguments->SetInt("type", static_cast<int>(type));
+  if (type == cef_cursor_type_t::CT_CUSTOM) {
+    CefRefPtr<CefDictionaryValue> customCursorInfo =
+        CefDictionaryValue::Create();
+    CefRefPtr<CefDictionaryValue> hotspot = CefDictionaryValue::Create();
+    hotspot->SetInt("x", custom_cursor_info.hotspot.x);
+    hotspot->SetInt("y", custom_cursor_info.hotspot.y);
+    customCursorInfo->SetDictionary("hotspot", hotspot);
+    customCursorInfo->SetDouble("imageScaleFactor",
+                                custom_cursor_info.image_scale_factor);
+    size_t bufferSize = static_cast<size_t>(custom_cursor_info.size.width) *
+                        static_cast<size_t>(custom_cursor_info.size.height) * 4;
+    CefRefPtr<CefBinaryValue> imageBuffer = CefBinaryValue::Create(
+        custom_cursor_info.buffer, bufferSize);
+    customCursorInfo->SetBinary("imageBuffer", imageBuffer);
+    arguments->SetDictionary("customCursorInfo", customCursorInfo);
+  }
+  this->SendRpcRequest(browser, "OnCursorChange", arguments);
   return true;
 }
 
@@ -308,13 +340,12 @@ bool BrowserHandler::OnBeforePopup(
     CefBrowserSettings& settings,
     CefRefPtr<CefDictionaryValue>& extra_info,
     bool* no_javascript_access) {
-  Browser_OnBeforePopup arguments;
-  arguments.targetUrl = target_url.ToString();
-  arguments.targetFrameName = target_frame_name.ToString();
-  arguments.targetDisposition = static_cast<int>(target_disposition);
-  arguments.userGesture = user_gesture;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnBeforePopup", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("targetUrl", target_url);
+  arguments->SetString("targetFrameName", target_frame_name);
+  arguments->SetInt("targetDisposition", static_cast<int>(target_disposition));
+  arguments->SetBool("userGesture", user_gesture);
+  this->SendRpcRequest(browser, "OnBeforePopup", arguments);
   return true;
 }
 
@@ -324,24 +355,26 @@ bool BrowserHandler::OnBeforeBrowse(
     CefRefPtr<CefRequest> request,
     bool user_gesture,
     bool is_redirect) {
-  Browser_OnBeforeBrowse arguments;
-  arguments.frameId = frame->GetIdentifier().ToString();
-  arguments.url = request->GetURL().ToString();
-  arguments.method = request->GetMethod().ToString();
-  arguments.referrerUrl = request->GetReferrerURL().ToString();
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("frameId", frame->GetIdentifier());
+  arguments->SetString("url", request->GetURL());
+  arguments->SetString("method", request->GetMethod());
+  arguments->SetString("referrerUrl", request->GetReferrerURL());
   CefRequest::HeaderMap headerMap;
   request->GetHeaderMap(headerMap);
+  CefRefPtr<CefDictionaryValue> headersDictionary =
+      CefDictionaryValue::Create();
   for (const auto& [key, value] : headerMap) {
-    arguments.headers[key.ToString()] = value.ToString();
+     headersDictionary->SetString(key, value);
   }
-  arguments.isMainFrame = frame->IsMain();
-  arguments.userGesture = user_gesture;
-  arguments.isRedirect = is_redirect;
-  arguments.transitionType =
-      static_cast<int>(request->GetTransitionType());
-  arguments.resourceType = static_cast<int>(request->GetResourceType());
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnBeforeBrowse", jsonArguments);
+  arguments->SetDictionary("headers", headersDictionary);
+  arguments->SetBool("isMainFrame", frame->IsMain());
+  arguments->SetBool("userGesture", user_gesture);
+  arguments->SetBool("isRedirect", is_redirect);
+  arguments->SetInt("transitionType",
+                    static_cast<int>(request->GetTransitionType()));
+  arguments->SetInt("resourceType", static_cast<int>(request->GetResourceType()));
+  this->SendRpcRequest(browser, "OnBeforeBrowse", arguments);
   return false;
 }
 
@@ -351,12 +384,11 @@ bool BrowserHandler::OnOpenURLFromTab(
     const CefString& target_url,
     CefLifeSpanHandler::WindowOpenDisposition target_disposition,
     bool user_gesture) {
-  Browser_OnOpenUrlFromTab arguments;
-  arguments.targetUrl = target_url.ToString();
-  arguments.targetDisposition = static_cast<int>(target_disposition);
-  arguments.userGesture = user_gesture;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnOpenUrlFromTab", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("targetUrl", target_url);
+  arguments->SetInt("targetDisposition", static_cast<int>(target_disposition));
+  arguments->SetBool("userGesture", user_gesture);
+  this->SendRpcRequest(browser, "OnOpenUrlFromTab", arguments);  
   return true;
 }
 
@@ -369,12 +401,11 @@ void BrowserHandler::OnRenderProcessTerminated(
     TerminationStatus status,
     int error_code,
     const CefString& error_string) {
-  Browser_OnRenderProcessTerminated arguments;
-  arguments.status = static_cast<int>(status);
-  arguments.errorCode = error_code;
-  arguments.errorString = error_string.ToString();
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnRenderProcessTerminated", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("status", static_cast<int>(status));
+  arguments->SetInt("errorCode", error_code);
+  arguments->SetString("errorString", error_string);
+  this->SendRpcRequest(browser, "OnRenderProcessTerminated", arguments);
 }
 
 bool BrowserHandler::OnRenderProcessUnresponsive(
@@ -399,37 +430,33 @@ bool BrowserHandler::RunContextMenu(
     CefRefPtr<CefContextMenuParams> params,
     CefRefPtr<CefMenuModel> model,
     CefRefPtr<CefRunContextMenuCallback> callback) {
-  Browser_RunContextMenu arguments;
-
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  CefRefPtr<CefListValue> commandsList = CefListValue::Create();
   if (model) {
     size_t count = model->GetCount();
     for (size_t i = 0; i < count; ++i) {
-      ContextMenuCommand cmd;
-      cmd.index = static_cast<int>(i);
-      cmd.commandId = model->GetCommandIdAt(i);
-      cmd.label = model->GetLabelAt(i).ToString();
-      cmd.enabled = model->IsEnabledAt(i);
-      cmd.checked = model->IsCheckedAt(i);
-      arguments.commands.push_back(std::move(cmd));
+      CefRefPtr<CefDictionaryValue> command = CefDictionaryValue::Create();
+      command->SetInt("index", static_cast<int>(i));
+      command->SetInt("commandId", model->GetCommandIdAt(i));
+      command->SetString("label", model->GetLabelAt(i));
+      command->SetBool("enabled", model->IsEnabledAt(i));
+      command->SetBool("checked", model->IsCheckedAt(i));
+      commandsList->SetDictionary(i, command);
     }
   }
-
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId =
+  arguments->SetList("commands", commandsList);
+  std::optional<CefString> requestId =
       this->SendRpcRequest(browser, "RunContextMenu", arguments);
   if (!requestId.has_value()) {
     return false;
   }
-
-
   browserProcessHandler->RegisterPendingCallback(
-      requestId.value(), [callback](const json& returnValue) {
-        int commandId = returnValue.value("commandId", -1);
+      requestId.value(), [callback](CefRefPtr<CefValue> returnValue) {
+        int commandId = returnValue->GetInt();
         CefPostTask(TID_UI,
                     base::BindOnce(&CefRunContextMenuCallback::Continue,
                                    callback.get(), commandId, EVENTFLAG_NONE));
       });
-
   return true;
 }
 
@@ -438,10 +465,10 @@ bool BrowserHandler::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefContextMenuParams> params,
                                          int commandId,
                                          cef_event_flags_t eventFlags) {
-  Browser_OnContextMenuCommand arguments;
-  arguments.commandId = commandId;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnContextMenuCommand", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetInt("commandId", commandId);
+  arguments->SetInt("eventFlags", eventFlags);
+  this->SendRpcRequest(browser, "OnContextMenuCommand", arguments);
   return true;
 }
 
@@ -449,36 +476,31 @@ void BrowserHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
                                           bool isLoading,
                                           bool canGoBack,
                                           bool canGoForward) {
-  Browser_OnLoadingStateChange arguments;
-  arguments.isLoading = isLoading;
-  arguments.canGoBack = canGoBack;
-  arguments.canGoForward = canGoForward;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnLoadingStateChange", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetBool("isLoading", isLoading);
+  arguments->SetBool("canGoBack", canGoBack);
+  arguments->SetBool("canGoForward", canGoForward);
+  this->SendRpcRequest(browser, "OnLoadingStateChange", arguments);
 }
 
 void BrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefFrame> frame,
                                  TransitionType transition_type) {
-  if (!frame->IsMain()) {
-    return;
-  }
-  Browser_OnLoadStart arguments;
-  arguments.transitionType = static_cast<int>(transition_type);
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnLoadStart", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("frameId", frame->GetIdentifier());
+  arguments->SetBool("isMainFrame", frame->IsMain());
+  arguments->SetInt("transitionType", static_cast<int>(transition_type));
+  this->SendRpcRequest(browser, "OnLoadStart", arguments);
 }
 
 void BrowserHandler::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                                CefRefPtr<CefFrame> frame,
                                int httpStatusCode) {
-  if (!frame->IsMain()) {
-    return;
-  }
-  Browser_OnLoadEnd arguments;
-  arguments.httpStatusCode = httpStatusCode;
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnLoadEnd", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("frameId", frame->GetIdentifier());
+  arguments->SetBool("isMainFrame", frame->IsMain());
+  arguments->SetInt("httpStatusCode", httpStatusCode);
+  this->SendRpcRequest(browser, "OnLoadEnd", arguments);
 }
 
 void BrowserHandler::OnLoadError(CefRefPtr<CefBrowser> browser,
@@ -486,23 +508,20 @@ void BrowserHandler::OnLoadError(CefRefPtr<CefBrowser> browser,
                                  ErrorCode errorCode,
                                  const CefString& errorText,
                                  const CefString& failedUrl) {
-  if (!frame->IsMain()) {
-    return;
-  }
-  Browser_OnLoadError arguments;
-  arguments.errorCode = static_cast<int>(errorCode);
-  arguments.errorText = errorText.ToString();
-  arguments.failedUrl = failedUrl.ToString();
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnLoadError", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("frameId", frame->GetIdentifier());
+  arguments->SetBool("isMainFrame", frame->IsMain());
+  arguments->SetInt("errorCode", errorCode);
+  arguments->SetString("errorText", errorText);
+  arguments->SetString("failedUrl", failedUrl);
+  this->SendRpcRequest(browser, "OnLoadError", arguments);
 }
 
 bool BrowserHandler::OnTooltip(CefRefPtr<CefBrowser> browser,
                                CefString& text) {
-  Browser_OnTooltip arguments;
-  arguments.text = text.ToString();
-  json jsonArguments = arguments;
-  this->SendRpcRequest(browser, "OnTooltip", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetString("text", text);
+  this->SendRpcRequest(browser, "OnTooltip", arguments);
   return true;
 }
 
@@ -516,44 +535,43 @@ bool BrowserHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
                                       CefRefPtr<CefDownloadItem> download_item,
                                       const CefString& suggested_name,
                                       CefRefPtr<CefBeforeDownloadCallback> callback) {
-  Browser_OnBeforeDownload arguments;
-  DownloadItem downloadItem;
-  downloadItem.isInProgress = download_item->IsInProgress();
-  downloadItem.isComplete = download_item->IsComplete();
-  downloadItem.isCanceled = download_item->IsCanceled();
-  downloadItem.isInterrupted = download_item->IsInterrupted();
-  downloadItem.isPaused = download_item->IsPaused();
-  downloadItem.interruptReason = download_item->GetInterruptReason();
-  downloadItem.currentSpeed = download_item->GetCurrentSpeed();
-  downloadItem.percentComplete = download_item->GetPercentComplete();
-  downloadItem.totalBytes = download_item->GetTotalBytes();
-  downloadItem.receivedBytes = download_item->GetReceivedBytes();
-  downloadItem.startTime = download_item->GetStartTime();
-  downloadItem.endTime = download_item->GetEndTime();
-  downloadItem.fullPath = download_item->GetFullPath().ToString();
-  downloadItem.id = download_item->GetId();
-  downloadItem.url = download_item->GetURL().ToString();
-  downloadItem.originalUrl = download_item->GetOriginalUrl().ToString();
-  downloadItem.suggestedFileName =
-      download_item->GetSuggestedFileName().ToString();
-  downloadItem.contentDisposition = download_item->GetContentDisposition();
-  downloadItem.mimeType = download_item->GetMimeType();
-  arguments.downloadItem = downloadItem;
-
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId =
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  CefRefPtr<CefDictionaryValue> downloadItem = CefDictionaryValue::Create();
+  downloadItem->SetBool("isInProgress", download_item->IsInProgress());
+  downloadItem->SetBool("isComplete", download_item->IsComplete());
+  downloadItem->SetBool("isCanceled", download_item->IsCanceled());
+  downloadItem->SetBool("isInterrupted", download_item->IsInterrupted());
+  downloadItem->SetBool("isPaused", download_item->IsPaused());
+  downloadItem->SetInt("interruptReason", download_item->GetInterruptReason());
+  downloadItem->SetInt("currentSpeed", download_item->GetCurrentSpeed());
+  downloadItem->SetInt("percentComplete", download_item->GetPercentComplete());
+  downloadItem->SetInt("totalBytes", download_item->GetTotalBytes());
+  downloadItem->SetInt("receivedBytes", download_item->GetReceivedBytes());
+  downloadItem->SetInt("startTime", download_item->GetStartTime().val);
+  downloadItem->SetInt("endTime", download_item->GetEndTime().val);
+  downloadItem->SetString("fullPath", download_item->GetFullPath());
+  downloadItem->SetInt("id", download_item->GetId());
+  downloadItem->SetString("url", download_item->GetURL());
+  downloadItem->SetString("originalUrl", download_item->GetOriginalUrl());
+  downloadItem->SetString("suggestedFileName", download_item->GetSuggestedFileName());
+  downloadItem->SetString("contentDisposition", download_item->GetContentDisposition());
+  downloadItem->SetString("mimeType", download_item->GetMimeType());
+  arguments->SetDictionary("downloadItem", downloadItem);
+  std::optional<CefString> requestId =
       this->SendRpcRequest(browser, "OnBeforeDownload", arguments);
   if (!requestId.has_value()) {
     return false;
   }
-
-  browserProcessHandler->RegisterPendingCallback(requestId.value(), [callback](const json& returnValue) {
-    DownloadConfiguration config = returnValue.get<DownloadConfiguration>();
-    if (config.shouldContinue) {
+  browserProcessHandler->RegisterPendingCallback(requestId.value(), [callback](const CefRefPtr<CefValue> returnValue) {
+    CefRefPtr<CefDictionaryValue> config = returnValue->GetDictionary();
+    bool shouldContinue = config->GetBool("shouldContinue");
+    CefString downloadPath = config->GetString("downloadPath");
+    bool showDialog = config->GetBool("showDialog");
+    if (shouldContinue) {
         CefPostTask(TID_UI,
                     base::BindOnce(&CefBeforeDownloadCallback::Continue,
-                                    callback.get(), config.downloadPath,
-                                    config.showDialog));
+                                    callback.get(), downloadPath,
+                                    showDialog));
     }
   });
 
@@ -564,39 +582,38 @@ void BrowserHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
                                        CefRefPtr<CefDownloadItem> download_item,
                                        CefRefPtr<CefDownloadItemCallback> callback) {
 
-  Browser_OnDownloadUpdated arguments;
-  DownloadItem downloadItem;
-  downloadItem.isInProgress = download_item->IsInProgress();
-  downloadItem.isComplete = download_item->IsComplete();
-  downloadItem.isCanceled = download_item->IsCanceled();
-  downloadItem.isInterrupted = download_item->IsInterrupted();
-  downloadItem.isPaused = download_item->IsPaused();
-  downloadItem.interruptReason = download_item->GetInterruptReason();
-  downloadItem.currentSpeed = download_item->GetCurrentSpeed();
-  downloadItem.percentComplete = download_item->GetPercentComplete();
-  downloadItem.totalBytes = download_item->GetTotalBytes();
-  downloadItem.receivedBytes = download_item->GetReceivedBytes();
-  downloadItem.startTime = download_item->GetStartTime();
-  downloadItem.endTime = download_item->GetEndTime();
-  downloadItem.fullPath = download_item->GetFullPath().ToString();
-  downloadItem.id = download_item->GetId();
-  downloadItem.url = download_item->GetURL().ToString();
-  downloadItem.originalUrl = download_item->GetOriginalUrl().ToString();
-  downloadItem.suggestedFileName =
-      download_item->GetSuggestedFileName().ToString();
-  downloadItem.contentDisposition = download_item->GetContentDisposition();
-  downloadItem.mimeType = download_item->GetMimeType();
-  arguments.downloadItem = downloadItem;
-  json jsonArguments = arguments;
-  std::optional<UUID> requestId = this->SendRpcRequest(browser, "OnDownloadUpdated", jsonArguments);
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  CefRefPtr<CefDictionaryValue> downloadItem = CefDictionaryValue::Create();
+  downloadItem->SetBool("isInProgress", download_item->IsInProgress());
+  downloadItem->SetBool("isComplete", download_item->IsComplete());
+  downloadItem->SetBool("isCanceled", download_item->IsCanceled());
+  downloadItem->SetBool("isInterrupted", download_item->IsInterrupted());
+  downloadItem->SetBool("isPaused", download_item->IsPaused());
+  downloadItem->SetInt("interruptReason", download_item->GetInterruptReason());
+  downloadItem->SetInt("currentSpeed", download_item->GetCurrentSpeed());
+  downloadItem->SetInt("percentComplete", download_item->GetPercentComplete());
+  downloadItem->SetInt("totalBytes", download_item->GetTotalBytes());
+  downloadItem->SetInt("receivedBytes", download_item->GetReceivedBytes());
+  downloadItem->SetInt("startTime", download_item->GetStartTime().val);
+  downloadItem->SetInt("endTime", download_item->GetEndTime().val);
+  downloadItem->SetString("fullPath", download_item->GetFullPath());
+  downloadItem->SetInt("id", download_item->GetId());
+  downloadItem->SetString("url", download_item->GetURL());
+  downloadItem->SetString("originalUrl", download_item->GetOriginalUrl());
+  downloadItem->SetString("suggestedFileName",
+                          download_item->GetSuggestedFileName());
+  downloadItem->SetString("contentDisposition",
+                          download_item->GetContentDisposition());
+  downloadItem->SetString("mimeType", download_item->GetMimeType());
+  arguments->SetDictionary("downloadItem", downloadItem);
+  std::optional<CefString> requestId = this->SendRpcRequest(browser, "OnDownloadUpdated", arguments);
   if (!requestId.has_value()) {
     return;
   }
-
   CefRefPtr<BrowserHandler> self = this;
   browserProcessHandler->RegisterPendingCallback(
-      requestId.value(), [self, callback](const json& returnValue) {
-        std::string action = returnValue.get<std::string>();
+      requestId.value(), [self, callback](const CefRefPtr<CefValue> returnValue) {
+        CefString action = returnValue->GetString();
         CefPostTask(TID_UI,
                     base::BindOnce(&BrowserHandler::DispatchDownloadAction,
                                    self, callback, std::move(action)));

@@ -1,65 +1,59 @@
 #include "http_request_client.h"
 
 #include "browser_process_handler.h"
-#include "json.hpp"
 #include "rpc.hpp"
-
-using json = nlohmann::json;
+#include <include/cef_parser.h>
 
 HttpRequestClient::HttpRequestClient(BrowserProcessHandler* handler,
                                      int httpRequestId)
     : handler(handler), httpRequestId(httpRequestId) {}
 
+void HttpRequestClient::SendRpcRequest(
+    std::string methodName,
+    CefRefPtr<CefDictionaryValue> arguments) {
+  CefString requestId = uuid_to_string(CreateUuid());
+  CefRefPtr<CefValue> request = CefValue::Create();
+  CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
+  payload->SetString("id", requestId);
+  payload->SetString("class", "HttpRequest");
+  payload->SetString("method", methodName);
+  payload->SetInt("instanceId", httpRequestId);
+  payload->SetDictionary("arguments", arguments);
+  request->SetDictionary(payload);
+  CefString jsonRequest = CefWriteJSON(request, JSON_WRITER_DEFAULT);
+  handler->SendMessage(jsonRequest);
+}
+
 void HttpRequestClient::OnRequestComplete(CefRefPtr<CefURLRequest> request) {
   handler->RemoveHttpRequest(httpRequestId);
-
-  RpcRequest notification;
-  notification.id = CreateUuid();
-  notification.className = "HttpRequest";
-  notification.instanceId = httpRequestId;
-
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+ 
   if (request->GetRequestStatus() == UR_SUCCESS &&
       request->GetRequestError() == ERR_NONE) {
-    CefRefPtr<CefResponse> cefResponse = request->GetResponse();
-    HttpClient_OnResponse response;
-    response.statusCode = cefResponse->GetStatus();
-    response.statusText = cefResponse->GetStatusText().ToString();
+    CefRefPtr<CefResponse> response = request->GetResponse();
+    arguments->SetInt("statusCode", response->GetStatus());
+    arguments->SetString("statusText", response->GetStatusText());
     CefResponse::HeaderMap headerMap;
-    cefResponse->GetHeaderMap(headerMap);
+    response->GetHeaderMap(headerMap);
+    CefRefPtr<CefDictionaryValue> headers = CefDictionaryValue::Create();
     for (const auto& [k, v] : headerMap) {
-      response.headers[k.ToString()] = v.ToString();
+      headers->SetString(k, v);
     }
-    notification.methodName = "OnResponse";
-    notification.arguments = response;
+    arguments->SetDictionary("headers", headers);
+    this->SendRpcRequest("OnResponse", arguments);
   } else {
-    HttpClient_OnError error;
-    error.requestStatus = request->GetRequestStatus();
-    error.errorCode = request->GetRequestError();
-    notification.methodName = "OnError";
-    notification.arguments = error;
+    arguments->SetInt("requestStatus", request->GetRequestStatus());
+    arguments->SetInt("errorCode", request->GetRequestError());
+    this->SendRpcRequest("OnError", arguments);
   }
-
-  json jsonNotification = notification;
-  handler->SendMessage(jsonNotification.dump());
 }
 
 void HttpRequestClient::OnDownloadData(CefRefPtr<CefURLRequest> request,
                                        const void* data,
                                        size_t data_length) {
-  HttpClient_OnData chunk;
-  chunk.data =
-      std::vector<uint8_t>(static_cast<const uint8_t*>(data),
-                           static_cast<const uint8_t*>(data) + data_length);
-
-  RpcRequest notification;
-  notification.id = CreateUuid();
-  notification.className = "HttpRequest";
-  notification.methodName = "OnData";
-  notification.instanceId = httpRequestId;
-  notification.arguments = chunk;
-
-  json jsonNotification = notification;
-  handler->SendMessage(jsonNotification.dump());
+  CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
+  arguments->SetBinary("data", CefBinaryValue::Create(data, data_length));
+  this->SendRpcRequest("OnData", arguments);
 }
 
 bool HttpRequestClient::GetAuthCredentials(bool isProxy,

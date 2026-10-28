@@ -9,6 +9,8 @@ class HttpRequestClient : public CefURLRequestClient {
  public:
   HttpRequestClient(BrowserProcessHandler* handler, int httpRequestId);
 
+  void SendRpcRequest(std::string method,
+                      CefRefPtr<CefDictionaryValue> arguments);
   void OnRequestComplete(CefRefPtr<CefURLRequest> request) override;
   void OnDownloadData(CefRefPtr<CefURLRequest> request,
                       const void* data,
