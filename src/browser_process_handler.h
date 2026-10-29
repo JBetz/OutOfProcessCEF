@@ -57,10 +57,21 @@ public:
   void RemoveHttpRequest(int httpRequestId);
 
   // Outgoing RPC messages.
-  CefString SendRequest(CefString className, int instanceId, CefString methodName, CefRefPtr<CefDictionaryValue> arguments);
-  CefString SendRequest(CefString className, int instanceId, CefString methodName);
+  CefString SendRequest(const CefString& className, int instanceId, const CefString& methodName, CefRefPtr<CefDictionaryValue> arguments);
+  CefString SendRequest(const CefString& className, int instanceId, const CefString& methodName);
   void SendResponse(const CefString& requestId, CefRefPtr<CefValue> returnValue);
-  void SendErrorResponse(const CefString& requestId, const CefString& message);
+  void SendErrorResponse(const CefString& requestId, const CefString& message);;
+  void SendUnknownInstanceErrorResponse(const CefString& requestId,
+                                          const CefString& className,
+                                          int instanceId);
+  void SendDoesNotUnderstandErrorResponse(const CefString& requestId,
+                              const CefString& className,
+                              const CefString& methodName);
+  void SendParseErrorResponse(const CefString& requestId,
+                              const CefString& className,
+                              int instanceId,
+                              const CefString& methodName,
+                              const CefString& message);
   void SendLogMessage(const SDL_LogPriority level, const CefString& message);
   void SendMessage(const CefString& payload);
 

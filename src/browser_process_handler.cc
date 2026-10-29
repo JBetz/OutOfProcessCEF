@@ -279,8 +279,8 @@ void BrowserProcessHandler::SendMessage(const CefString& payload) {
   outgoingMessageQueue.push(payload.ToString());
 }
 
-CefString BrowserProcessHandler::SendRequest(CefString className, int instanceId, CefString methodName, CefRefPtr<CefDictionaryValue> arguments) {
-  CefString requestId = uuid_to_string(CreateUuid());
+CefString BrowserProcessHandler::SendRequest(const CefString& className, int instanceId, const CefString& methodName, CefRefPtr<CefDictionaryValue> arguments) {
+  const CefString& requestId = uuid_to_string(CreateUuid());
   CefRefPtr<CefValue> request = CefValue::Create();
   CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
   payload->SetString("id", requestId);
@@ -295,9 +295,9 @@ CefString BrowserProcessHandler::SendRequest(CefString className, int instanceId
 }
 
 CefString BrowserProcessHandler::SendRequest(
-    CefString className,
+    const CefString& className,
     int instanceId,
-    CefString methodName) {
+    const CefString& methodName) {
   return this->SendRequest(className, instanceId, methodName, CefDictionaryValue::Create());
 }
 
@@ -330,6 +330,33 @@ void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
   this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
 }
 
+void BrowserProcessHandler::SendUnknownInstanceErrorResponse(
+    const CefString& requestId,
+    const CefString& className,
+    int instanceId) {
+    this->SendErrorResponse(requestId,
+                        className.ToString() + " instance " + std::to_string(instanceId) +
+                            " not found");
+}
+
+void BrowserProcessHandler::SendDoesNotUnderstandErrorResponse(const CefString& requestId, const CefString& className, const CefString& methodName) {
+  this->SendErrorResponse(requestId,
+                          "Unknown " + className.ToString()  + " method: " + methodName.ToString());
+}
+
+void BrowserProcessHandler::SendParseErrorResponse(const CefString& requestId,
+    const CefString& className,
+    int instanceId,
+    const CefString& methodName,
+    const CefString& message) {
+  this->SendErrorResponse(requestId, "Error when trying to execute " +
+                                         className.ToString() + ">>" +
+                                         methodName.ToString() + " on instance " +
+                                         std::to_string(instanceId) + ": " +
+                                         message.ToString());
+}
+
+
 void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
                                            const CefString& message) {
   SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.ToString().c_str());
@@ -349,12 +376,14 @@ void BrowserProcessHandler::HandleRpcRequest(
   if (className == "Client") {
     auto cmd = RpcRegistry<ClientCommand>::Lookup(methodName);
     if (!cmd) {
-      this->SendErrorResponse(requestId, "Unknown Client method: " + methodName.ToString());
+      this->SendDoesNotUnderstandErrorResponse(requestId, className,
+                                               methodName);
       return;
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
+      this->SendParseErrorResponse(requestId, className, instanceId, methodName,
+                                   err.value().ToString());
       return;
     }
     cmd->Execute(this);
@@ -365,19 +394,18 @@ void BrowserProcessHandler::HandleRpcRequest(
     CefRefPtr<CefBrowser> browser = GetBrowser(instanceId);
     CefRefPtr<BrowserHandler> browserHandler = GetBrowserHandler(instanceId);
     if (!browser || !browserHandler) {
-      this->SendErrorResponse(
-          requestId,
-          "Browser instance " + std::to_string(instanceId) + " not found");
+      this->SendDoesNotUnderstandErrorResponse(requestId, className, methodName);
       return;
     }
     auto cmd = RpcRegistry<BrowserCommand>::Lookup(methodName);
     if (!cmd) {
-      this->SendErrorResponse(requestId, "Unknown Browser method: " + methodName.ToString());
+      this->SendDoesNotUnderstandErrorResponse(requestId, className,
+                                               methodName);
       return;
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
+      this->SendParseErrorResponse(requestId, className, instanceId, methodName, err.value().ToString());
       return;
     }
     cmd->Execute(this, browser, browserHandler);
@@ -387,19 +415,19 @@ void BrowserProcessHandler::HandleRpcRequest(
   if (className == "HttpRequest") {
     auto it = httpRequestEntries.find(instanceId);
     if (it == httpRequestEntries.end()) {
-      this->SendErrorResponse(
-          requestId,
-          "HttpRequest instance " + std::to_string(instanceId) + " not found");
+      this->SendDoesNotUnderstandErrorResponse(requestId, className,
+                                               methodName);
       return;
     }
     auto cmd = RpcRegistry<HttpRequestCommand>::Lookup(methodName);
     if (!cmd) {
-      this->SendErrorResponse(requestId, "Unknown HttpRequest method: " + methodName.ToString());
+      this->SendDoesNotUnderstandErrorResponse(requestId, className, methodName);
       return;
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
+      this->SendParseErrorResponse(requestId, className, instanceId, methodName,
+                                   err.value().ToString());
       return;
     }
     cmd->Execute(this, it->second);

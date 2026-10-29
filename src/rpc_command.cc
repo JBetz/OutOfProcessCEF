@@ -16,10 +16,6 @@ std::optional<CefString> RpcCommand::Initialize(
   this->rawArgs = args;
   this->errors.clear();
 
-  if (!args) {
-    return "Arguments dictionary is null";
-  }
-
   // Invoke derived class declarations
   this->ReadArguments();
 
