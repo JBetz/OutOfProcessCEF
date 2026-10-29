@@ -14,7 +14,7 @@ class BrowserHandler;
 
 class BrowserCommand : public RpcCommand {
  public:
-  virtual void Execute(BrowserProcessHandler* handler,
+  virtual void Execute(CefRefPtr<BrowserProcessHandler> handler,
                        CefRefPtr<CefBrowser> browser,
                        CefRefPtr<BrowserHandler> browserHandler) = 0;
 };
@@ -24,7 +24,7 @@ class LoadUrlCommand : public BrowserCommand {
   CefString url;
 
   void ReadArguments() override;
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -37,7 +37,7 @@ class LoadRequestCommand : public BrowserCommand {
   std::vector<CefRefPtr<CefPostDataElement>> postData;
 
   void ReadArguments() override;
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -49,7 +49,7 @@ class ReloadCommand : public BrowserCommand {
   void ReadArguments() override {}
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -65,7 +65,7 @@ class EvaluateJavaScriptCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -84,7 +84,7 @@ class OnMouseClickCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -99,7 +99,7 @@ class OnMouseMoveCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -115,7 +115,7 @@ class OnMouseWheelCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -136,7 +136,7 @@ class OnKeyboardEventCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -150,7 +150,7 @@ class FocusCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -164,7 +164,7 @@ class WasHiddenCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -178,7 +178,7 @@ class WasResizedCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -192,7 +192,7 @@ class SetWindowOriginCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -203,7 +203,7 @@ class GetFrameRateCommand : public BrowserCommand {
   void ReadArguments() override {}
  
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -217,7 +217,7 @@ class SetFrameRateCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -231,7 +231,7 @@ class CloseCommand : public BrowserCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -243,7 +243,7 @@ class TryCloseCommand : public BrowserCommand {
   void ReadArguments() override {}
 
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -253,7 +253,7 @@ class CutCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -263,7 +263,7 @@ class CopyCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -273,7 +273,7 @@ class PasteCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -283,7 +283,7 @@ class DeleteCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -293,7 +293,7 @@ class UndoCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -303,7 +303,7 @@ class RedoCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -313,7 +313,7 @@ class SelectAllCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -323,7 +323,7 @@ class GetSourceCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -333,7 +333,7 @@ class GetTextCommand : public BrowserCommand {
  protected:
   void ReadArguments() override {}
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -345,7 +345,7 @@ class StartDownloadCommand : public BrowserCommand {
  protected:
   void ReadArguments() override;
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
@@ -360,7 +360,7 @@ class DownloadImageCommand : public BrowserCommand {
  protected:
   void ReadArguments() override;
  public:
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefBrowser> browser,
                CefRefPtr<BrowserHandler> browserHandler) override;
 };
