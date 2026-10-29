@@ -19,7 +19,6 @@
 
 #include "browser_handler.h"
 #include "browser_process_handler.h"
-#include "guid_ext.hpp"
 #include "rpc.hpp"
 #include "thread_safe_queue.hpp"
 #include "http_request_client.h"

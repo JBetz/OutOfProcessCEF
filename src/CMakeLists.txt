@@ -20,7 +20,6 @@ set(CEFPROCESSRUNNER_SRCS
   client_rpc_commands.h
   command_line_switches.cc
   command_line_switches.h
-  guid_ext.hpp
   http_request_client.cc
   http_request_client.h
   http_request_rpc_commands.cc
