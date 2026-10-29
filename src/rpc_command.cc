@@ -9,7 +9,7 @@
 
 #include "browser_process_handler.h"
 
-std::optional<std::string> RpcCommand::Initialize(
+std::optional<CefString> RpcCommand::Initialize(
     const CefString& id_,
     CefRefPtr<CefDictionaryValue> args) {
   this->id = id_;
@@ -36,10 +36,8 @@ std::optional<std::string> RpcCommand::Initialize(
   return std::nullopt;
 }
 
-// --- Primitive Implementations ---
-
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               bool& v) {
   if (dict->GetType(k) != VTYPE_BOOL)
     return false;
@@ -48,7 +46,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               int& v) {
   if (dict->GetType(k) != VTYPE_INT)
     return false;
@@ -57,7 +55,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               uint32_t& v) {
   if (dict->GetType(k) != VTYPE_INT)
     return false;
@@ -66,7 +64,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               int64_t& v) {
   if (dict->GetType(k) == VTYPE_INT) {
     v = dict->GetInt(k);
@@ -80,7 +78,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               double& v) {
   if (dict->GetType(k) == VTYPE_DOUBLE) {
     v = dict->GetDouble(k);
@@ -93,10 +91,8 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
   return false;
 }
 
-// --- String Implementations ---
-
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               CefString& v) {
   if (dict->GetType(k) != VTYPE_STRING)
     return false;
@@ -105,18 +101,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
-                              std::string& v) {
-  if (dict->GetType(k) != VTYPE_STRING)
-    return false;
-  v = dict->GetString(k).ToString();
-  return true;
-}
-
-// --- CEF Geometries and Events ---
-
-bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               CefPoint& v) {
   if (dict->GetType(k) != VTYPE_DICTIONARY)
     return false;
@@ -128,7 +113,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               CefRect& v) {
   if (dict->GetType(k) != VTYPE_DICTIONARY)
     return false;
@@ -142,7 +127,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               CefMouseEvent& v) {
   if (dict->GetType(k) != VTYPE_DICTIONARY)
     return false;
@@ -153,10 +138,8 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
   return true;
 }
 
-// --- Map: std::map<CefString, CefString> (HTTP Headers) ---
-
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               std::map<CefString, CefString>& v) {
   if (dict->GetType(k) != VTYPE_DICTIONARY)
     return false;
@@ -170,10 +153,8 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
   return true;
 }
 
-// --- List of Strings: std::vector<CefString> ---
-
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               std::vector<CefString>& v) {
   if (dict->GetType(k) != VTYPE_LIST)
     return false;
@@ -190,7 +171,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               std::vector<CefRefPtr<CefPostDataElement>>& v) {
   if (dict->GetType(k) != VTYPE_LIST)
     return false;
@@ -240,7 +221,7 @@ bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
 }
 
 bool RpcCommand::ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                              const std::string& k,
+                              const CefString& k,
                               CefRefPtr<CefDictionaryValue>& v) {
   if (dict->GetType(k) != VTYPE_DICTIONARY)
     return false;

@@ -17,7 +17,7 @@ class BrowserProcessHandler;
 class RpcCommand {
  public:
   virtual ~RpcCommand() = default;
-  std::optional<std::string> Initialize(const CefString& id,
+  std::optional<CefString> Initialize(const CefString& id,
                                         CefRefPtr<CefDictionaryValue> args);
 
  protected:
@@ -51,26 +51,23 @@ class RpcCommand {
   }
 
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            bool& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            int& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            uint32_t& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            int64_t& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            double& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            CefString& v);
-  static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
-                           std::string& v);
 
   template <typename EnumType>
     requires std::is_enum_v<EnumType>
@@ -83,30 +80,30 @@ class RpcCommand {
     return true;
   }
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            CefPoint& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            CefRect& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            CefMouseEvent& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            std::map<CefString, CefString>& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            std::vector<CefString>& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            std::vector<CefRefPtr<CefPostDataElement>>& v);
   static bool ExtractValue(CefRefPtr<CefDictionaryValue> dict,
-                           const std::string& k,
+                           const CefString& k,
                            CefRefPtr<CefDictionaryValue>& v);
 
  private:
   CefRefPtr<CefDictionaryValue> rawArgs;
-  std::vector<std::string> errors;
+  std::vector<CefString> errors;
 };
 
 template <typename BaseCommand>
@@ -114,7 +111,7 @@ class RpcRegistry {
  public:
   using FactoryFunction = std::function<std::unique_ptr<BaseCommand>()>;
 
-  static bool Register(const std::string& name, FactoryFunction factory) {
+  static bool Register(const CefString& name, FactoryFunction factory) {
     GetTable()[name] = std::move(factory);
     return true;
   }
