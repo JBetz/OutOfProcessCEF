@@ -60,8 +60,8 @@ public:
   CefString SendRequest(CefString className, int instanceId, CefString methodName, CefRefPtr<CefDictionaryValue> arguments);
   CefString SendRequest(CefString className, int instanceId, CefString methodName);
   void SendResponse(const CefString& requestId, CefRefPtr<CefValue> returnValue);
-  void SendErrorResponse(const CefString& requestId, const std::string& message);
-  void SendLogMessage(const SDL_LogPriority level, const std::string& message);
+  void SendErrorResponse(const CefString& requestId, const CefString& message);
+  void SendLogMessage(const SDL_LogPriority level, const CefString& message);
   void SendMessage(const CefString& payload);
 
   // RPC threads, need to be static.

@@ -314,12 +314,12 @@ void BrowserProcessHandler::SendResponse(const CefString& requestId,
   response->SetNull("error");
   auto root = CefValue::Create();
   root->SetDictionary(response);
-  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT).ToString());
+  this->SendMessage(CefWriteJSON(root, JSON_WRITER_DEFAULT));
 }
 
 void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
-                                              const std::string& errorMessage) {
-  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, errorMessage.c_str());
+                                              const CefString& errorMessage) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, errorMessage.ToString().c_str());
   auto response = CefDictionaryValue::Create();
   response->SetString("requestId", requestId);
   response->SetBool("success", false);
@@ -331,8 +331,8 @@ void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
 }
 
 void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
-                                           const std::string& message) {
-  SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.c_str());
+                                           const CefString& message) {
+  SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.ToString().c_str());
   auto arguments = CefDictionaryValue::Create();
   arguments->SetInt("level", level);
   arguments->SetString("message", message);
@@ -354,7 +354,7 @@ void BrowserProcessHandler::HandleRpcRequest(
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
       return;
     }
     cmd->Execute(this);
@@ -377,7 +377,7 @@ void BrowserProcessHandler::HandleRpcRequest(
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
       return;
     }
     cmd->Execute(this, browser, browserHandler);
@@ -399,7 +399,7 @@ void BrowserProcessHandler::HandleRpcRequest(
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value());
+      this->SendErrorResponse(requestId, "Invalid arguments: " + err.value().ToString());
       return;
     }
     cmd->Execute(this, it->second);
@@ -486,22 +486,20 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       if (recvBuffer.size() < 4 + msgLen)
         break;
 
-      std::string jsonMessageString(recvBuffer.begin() + 4,
-                          recvBuffer.begin() + 4 + msgLen);
-      recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
-
+      std::string tempJsonString(reinterpret_cast<const char*>(recvBuffer.data() + 4),
+                          msgLen);
+      CefString jsonString(tempJsonString);
       
-      cef_json_parser_options_t options = JSON_PARSER_ALLOW_TRAILING_COMMAS;
+      // Consume framed bytes from recvBuffer
+      recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
+            
       CefString errorMessageOut;
-      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(CefString(jsonMessageString),
-                                               options, errorMessageOut);
+      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(jsonString, JSON_PARSER_ALLOW_TRAILING_COMMAS,
+          errorMessageOut);
       if (!jsonMessage) {
-        size_t previewLen = std::min<size_t>(jsonMessageString.size(), 256);
-        std::string preview = jsonMessageString.substr(0, previewLen);
         SDL_Log(
-            "RpcReceiveThread: JSON parse_error: %s, payload_preview='%s'",
-                errorMessageOut.ToString().c_str(),
-                preview.c_str());
+            "RpcReceiveThread: JSON parse_error: %s",
+                errorMessageOut.ToString().c_str());
         continue;
       }
 
