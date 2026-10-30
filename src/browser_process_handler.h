@@ -72,7 +72,7 @@ public:
                               int instanceId,
                               const CefString& methodName,
                               const CefString& message);
-  void SendLogMessage(const SDL_LogPriority level, const CefString& message);
+  void SendLogMessage(const cef_log_severity_t severity, const CefString& message);
   void SendMessage(const CefString& payload);
 
   // RPC threads, need to be static.

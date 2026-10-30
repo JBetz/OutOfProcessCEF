@@ -82,9 +82,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   ProcessHandler::ProcessType process_type =
       ProcessHandler::GetProcessType(command_line);
 
-  SDL_Log((std::string("Running process type: ") +
-           ProcessHandler::ProcessTypeToString(process_type) + "\n")
-              .c_str());
+  LOG(INFO) << "Running process type: " << ProcessHandler::ProcessTypeToString(process_type);
 
   if (process_type == ProcessHandler::BrowserProcess) {
     const std::string& server_port_str =
@@ -97,19 +95,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
         command_line->GetSwitchValue(switches::kWindowMessageId);
 
     if (server_port_str.empty()) {
-      SDL_Log("ERROR: --server-port is required");
+      LOG(ERROR) << "--server - port is required ";
       return 1;
     }
     if (application_process_id_str.empty()) {
-      SDL_Log("ERROR: --application-process-id is required");
+      LOG(ERROR)  << "--application-process-id is required";
       return 1;
     }
     if (application_message_window_handle_str.empty()) {
-      SDL_Log("ERROR: --application-message-window-handle is required");
+      LOG(ERROR) << "--application-message-window-handle is required";
       return 1;
     }
     if (window_message_id_str.empty()) {
-      SDL_Log("ERROR: --window-message-id is required");
+      LOG(ERROR) << "--window-message-id is required";
       return 1;
     }
 
@@ -118,8 +116,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     HANDLE applicationProcessHandle =
         OpenProcess(PROCESS_DUP_HANDLE, FALSE, applicationProcessId);
     if (applicationProcessHandle == NULL) {
-      SDL_Log("ERROR: OpenProcess failed for process id %s",
-              application_process_id_str.c_str());
+      LOG(ERROR) << "OpenProcess failed for process id " << application_process_id_str;
       return 1;
     }
 

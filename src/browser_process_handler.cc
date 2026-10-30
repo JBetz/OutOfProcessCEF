@@ -99,31 +99,30 @@ void BrowserProcessHandler::OnContextInitialized() {
   this->CefBrowserProcessHandler::OnContextInitialized();
 
   if (!SDL_Init(SDL_INIT_EVENTS)) {
-    SDL_Log(SDL_GetError());
+    LOG(ERROR) << "Error initializing SDL: " << SDL_GetError();
     abort();
   }
 
   if (!NET_Init()) {
-    SDL_Log(SDL_GetError());
+    LOG(ERROR) << "Error initializing SDL_net: " << SDL_GetError();
     abort();
   }
 
   socketServer = NET_CreateServer(NULL, serverPort);
   if (socketServer == NULL) {
-    SDL_Log(SDL_GetError());
+    LOG(ERROR) << "Error creating server: " << SDL_GetError();
     abort();
   }
 
-  SDL_Log("Server started on port %d", serverPort);
-
+  LOG(INFO) << "Server started on port " << serverPort;
   // Signal that the server is ready, then block until a client connects.
   HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, L"ChromiumSocketReady");
   if (hEvent == NULL) {
-    SDL_Log("Error opening ChromiumSocketReady event: %lu", GetLastError());
+    LOG(ERROR) << "Error opening ChromiumSocketReady event: " << GetLastError();
     abort();
   }
   if (!SetEvent(hEvent)) {
-    SDL_Log("Error signaling ChromiumSocketReady event: %lu", GetLastError());
+    LOG(ERROR) << "Error signaling ChromiumSocketReady event: " << GetLastError();
     abort();
   }
   CloseHandle(hEvent);
@@ -133,25 +132,25 @@ void BrowserProcessHandler::OnContextInitialized() {
   NET_WaitUntilInputAvailable(waitSockets, 1, -1);
 
   if (!NET_AcceptClient(socketServer, &streamSocket)) {
-    SDL_Log("Accept error: %s", SDL_GetError());
+    LOG(ERROR) << "Error accepting client: " << SDL_GetError();
     abort();
   }
   if (!streamSocket) {
-    SDL_Log("No client connected after WaitUntilInputAvailable");
+    LOG(ERROR) << "No client connected after WaitUntilInputAvailable";
     abort();
   }
-  SDL_Log("Client connected!");
+  LOG(INFO) << "Client connected!";
 
   SDL_Thread* receiveThread =
       SDL_CreateThread(RpcReceiveThread, "CefRpcReceive", this);
   if (receiveThread == NULL) {
-    SDL_Log("Failed creating RPC receive thread: %s", SDL_GetError());
+    LOG(ERROR) << "Error creating RPC receive thread: " << SDL_GetError();
     abort();
   }
 
   SDL_Thread* sendThread = SDL_CreateThread(RpcSendThread, "CefRpcSend", this);
   if (sendThread == NULL) {
-    SDL_Log("Failed creating RPC send thread: %s", SDL_GetError());
+    LOG(ERROR) << "Error creating RPC send thread: " << SDL_GetError();
     abort();
   }
 }
@@ -190,14 +189,13 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const CefString& requestId,
   if (browser) {
     browserId = browser->GetIdentifier();
     browserEntries[browserId] = {handler, browser};
-    SDL_Log("Created browser on UI thread; id=%d url=%s", browserId,
-            url.ToString().c_str());
+    LOG(INFO) << "Created browser on UI thread; id=" << browserId << "url=" << url;
     CefRefPtr<CefValue> returnValue = CefValue::Create();
     returnValue->SetInt(browserId);
     this->SendResponse(requestId, returnValue);
     handler->MarkCreated();
   } else {
-    SDL_Log("CreateBrowserSync returned null");
+    LOG(ERROR) << "CreateBrowserSync returned null";
   }
 }
 
@@ -240,10 +238,10 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
 void BrowserProcessHandler::Client_ShutdownRpc() {
   isShuttingDown = true;
   if (browserEntries.empty()) {
-    SDL_Log("No browser entries during shutdown.");
+    LOG(INFO) << "No browser entries during shutdown.";
     CefQuitMessageLoop();
   } else {
-    SDL_Log("%d browser entries during shutdown.", browserEntries.size());
+    LOG(INFO) << browserEntries.size() << " browser entries during shutdown.";
     for (const auto& [id, entry] : browserEntries) {
       entry.second->GetHost()->CloseBrowser(true);
     }
@@ -318,7 +316,7 @@ void BrowserProcessHandler::SendResponse(const CefString& requestId,
 
 void BrowserProcessHandler::SendErrorResponse(const CefString& requestId,
                                               const CefString& errorMessage) {
-  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, errorMessage.ToString().c_str());
+  LOG(ERROR) << errorMessage;
   auto response = CefDictionaryValue::Create();
   response->SetString("requestId", requestId);
   response->SetBool("success", false);
@@ -356,11 +354,25 @@ void BrowserProcessHandler::SendParseErrorResponse(const CefString& requestId,
 }
 
 
-void BrowserProcessHandler::SendLogMessage(const SDL_LogPriority level,
+void BrowserProcessHandler::SendLogMessage(const cef_log_severity_t severity,
                                            const CefString& message) {
-  SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, level, message.ToString().c_str());
+  if (severity == LOGSEVERITY_DEFAULT) {
+    LOG(INFO) << message;
+  } else if (severity == LOGSEVERITY_VERBOSE) {
+    LOG(INFO) << message;
+  } else if (severity == LOGSEVERITY_DEBUG) {
+    LOG(INFO) << message;
+  } else if (severity == LOGSEVERITY_INFO) {
+    LOG(INFO) << message;
+  } else if (severity == LOGSEVERITY_WARNING) {
+    LOG(WARNING) << message;
+  } else if (severity == LOGSEVERITY_ERROR) {
+    LOG(ERROR) << message;
+  } else if (severity == LOGSEVERITY_FATAL) {
+    LOG(FATAL) << message;
+  }
   auto arguments = CefDictionaryValue::Create();
-  arguments->SetInt("level", level);
+  arguments->SetInt("severity", severity);
   arguments->SetString("message", message);
   this->SendRequest("Client", 1,
                     "OnLogMessage", arguments);
@@ -475,8 +487,7 @@ void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
       // Execute callback (which handles posting to TID_UI if needed)
       callback(returnValue);
     } else {
-      SDL_Log("RPC response error for request: %s",
-              error->GetString().ToString().c_str());
+      LOG(ERROR) << "RPC response error for request: " << error->GetString();
     }
   }
 }
@@ -486,7 +497,7 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       base::WrapRefCounted<BrowserProcessHandler>(
           static_cast<BrowserProcessHandler*>(browserProcessHandlerPtr));
 
-  SDL_Log("Receive thread running");
+  LOG(INFO) << "Receive thread running";
 
   std::vector<uint8_t> recvBuffer;
   uint8_t temp[1024];
@@ -501,7 +512,7 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
     if (received > 0) {
       recvBuffer.insert(recvBuffer.end(), temp, temp + received);
     } else if (received < 0) {
-      SDL_Log("Read error: %s", SDL_GetError());
+      LOG(ERROR) << "Read error: " << SDL_GetError();
       break;
     }
 
@@ -524,9 +535,7 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(jsonString, JSON_PARSER_ALLOW_TRAILING_COMMAS,
           errorMessageOut);
       if (!jsonMessage) {
-        SDL_Log(
-            "RpcReceiveThread: JSON parse_error: %s",
-                errorMessageOut.ToString().c_str());
+        LOG(ERROR) << "RpcReceiveThread: JSON parse_error: " << errorMessageOut.ToString();
         continue;
       }
 
@@ -549,7 +558,7 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
                                     methodName, arguments); 
         }
       } catch (const std::exception& e) {
-        SDL_Log("RpcReceiveThread: exception during dispatch: %s", e.what());
+        LOG(ERROR) << "RpcReceiveThread: exception during dispatch: " << e.what();
       }
     }
   }
@@ -561,7 +570,7 @@ int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
       base::WrapRefCounted<BrowserProcessHandler>(
           static_cast<BrowserProcessHandler*>(browserProcessHandlerPtr));
 
-  SDL_Log("Send thread running");
+  LOG(INFO) << "Send thread running";
 
   while (true) {
     // Block until an outgoing message is available.
@@ -578,8 +587,7 @@ int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
     int total = static_cast<int>(sendBuf.size());
     if (!NET_WriteToStreamSocket(handler->streamSocket, sendBuf.data(),
                                  total)) {
-      SDL_Log("NET_WriteToStreamSocket failed or connection closed: %s",
-              SDL_GetError());
+      LOG(ERROR) << "NET_WriteToStreamSocket failed or connection closed: " << SDL_GetError();
       break;
     }
     NET_WaitUntilStreamSocketDrained(handler->streamSocket, -1);

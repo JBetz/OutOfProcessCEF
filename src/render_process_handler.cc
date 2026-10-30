@@ -454,7 +454,6 @@ bool RenderProcessHandler::OnProcessMessageReceived(
   CefRefPtr<CefV8Context> context = frame->GetV8Context();
   context->Enter();
   const CefString& name = message->GetName();
-  SDL_Log("RenderProcessHandler received message: %s", name.ToString().c_str());
   bool handled = false;
   if (name == "Eval") {
     auto argumentList = message->GetArgumentList();

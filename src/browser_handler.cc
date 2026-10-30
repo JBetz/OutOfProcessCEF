@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <include/base/cef_bind.h>
 #include <include/base/cef_callback.h>
+#include <include/base/cef_logging.h>
 #include <include/wrapper/cef_closure_task.h>
 #include <include/cef_parser.h>
 
@@ -91,13 +92,13 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
   HANDLE fileMapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, bufferSize, NULL);
   if (fileMapping == NULL) {
-    SDL_Log("Error creating file mapping for OnPaint buffer");
+    LOG(ERROR) << "Error creating file mapping for OnPaint buffer";
     return;
   }
   void* mappedView =
       MapViewOfFile(fileMapping, FILE_MAP_WRITE, 0, 0, bufferSize);
   if (mappedView == NULL) {
-    SDL_Log("Error mapping view of file for OnPaint buffer");
+    LOG(ERROR) << "Error mapping view of file for OnPaint buffer";
     CloseHandle(fileMapping);
     return;
   }
@@ -113,7 +114,7 @@ void BrowserHandler::OnPaint(CefRefPtr<CefBrowser> browser,
   CloseHandle(fileMapping);
 
   if (!duplicateSuccess) {
-    SDL_Log("Error duplicating file mapping handle: DuplicateHandle() call failed");
+    LOG(ERROR) << "Error duplicating file mapping handle: DuplicateHandle() call failed";
     return;
   }
   
@@ -150,7 +151,7 @@ void BrowserHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
       GetCurrentProcess(), sourceHandle, applicationProcessHandle,
       &duplicateHandle, 0, FALSE, DUPLICATE_SAME_ACCESS);
   if (!duplicateSuccess) {
-    SDL_Log("Error duplicating shared texture: DuplicateHandle() call failed");
+    LOG(ERROR) << "Error duplicating shared texture: DuplicateHandle() call failed";
     return;
   }
   CefRefPtr<CefDictionaryValue> arguments = CefDictionaryValue::Create();
@@ -603,6 +604,6 @@ void BrowserHandler::DispatchDownloadAction(
     } else if (action == "resume") {
       callback->Resume();
     } else {
-      SDL_Log("Unrecognized download action: %s", action.c_str());
+      LOG(ERROR) << "Unrecognized download action: " << action;
     }
 }
