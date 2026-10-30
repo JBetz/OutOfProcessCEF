@@ -34,9 +34,7 @@ void CreateHttpRequestCommand::ReadArguments() {
 }
 
 void CreateHttpRequestCommand::Execute(BrowserProcessHandler* handler) {
-  CefPostTask(TID_UI, base::BindOnce(
-                          &BrowserProcessHandler::Client_CreateHttpRequestRpc,
-                          handler, id, url, method, headers, body));
+  handler->CreateHttpRequest(id, url, method, headers, body);
 }
 
 void ShutdownCommand::Execute(BrowserProcessHandler* handler) {

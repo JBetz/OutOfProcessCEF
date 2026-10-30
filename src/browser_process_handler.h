@@ -85,7 +85,7 @@ class BrowserProcessHandler : public ProcessHandler,
                                bool windowless,
                                bool hardwareAccelerated,
                                bool private_);
-  void Client_CreateHttpRequestRpc(
+  void CreateHttpRequest(
       const CefString& requestId,
       const CefString& url,
       const CefString& method,
@@ -97,7 +97,6 @@ class BrowserProcessHandler : public ProcessHandler,
                            const CefString& requestId);
   void Browser_GetFrameRateRpc(const CefRefPtr<CefBrowser> browser,
                                const CefString& requestId);
-  void HttpRequest_CancelRpc(int httpRequestId);
   void RemoveHttpRequest(int httpRequestId);
 
   // Outgoing RPC messages.

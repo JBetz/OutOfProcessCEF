@@ -246,7 +246,7 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(
   }
 }
 
-void BrowserProcessHandler::Client_CreateHttpRequestRpc(
+void BrowserProcessHandler::CreateHttpRequest(
     const CefString& requestId,
     const CefString& url,
     const CefString& method,
