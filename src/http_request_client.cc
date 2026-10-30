@@ -4,7 +4,7 @@
 #include "rpc.hpp"
 #include <include/cef_parser.h>
 
-HttpRequestClient::HttpRequestClient(BrowserProcessHandler* handler,
+HttpRequestClient::HttpRequestClient(CefRefPtr<BrowserProcessHandler> handler,
                                      int httpRequestId)
     : handler(handler), httpRequestId(httpRequestId) {}
 

@@ -17,7 +17,7 @@ void CreateBrowserCommand::ReadArguments() {
   Require("private", private_);
 }
 
-void CreateBrowserCommand::Execute(BrowserProcessHandler* handler) {
+void CreateBrowserCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   HWND parentHwnd = reinterpret_cast<HWND>(parentWindowHandle);
   CefPostTask(
       TID_UI,
@@ -33,16 +33,16 @@ void CreateHttpRequestCommand::ReadArguments() {
   Optional("body", body);
 }
 
-void CreateHttpRequestCommand::Execute(BrowserProcessHandler* handler) {
+void CreateHttpRequestCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   handler->CreateHttpRequest(id, url, method, headers, body);
 }
 
-void ShutdownCommand::Execute(BrowserProcessHandler* handler) {
+void ShutdownCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::Client_ShutdownRpc,
                                      handler));
 }
 
-void GetPendingCallbacksCommand::Execute(BrowserProcessHandler* handler) {
+void GetPendingCallbacksCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   CefRefPtr<CefListValue> pendingCallbackUuids = CefListValue::Create();
   for (auto const& imap : handler->GetPendingCallbacks()) {
     pendingCallbackUuids->SetString(pendingCallbackUuids->GetSize(), imap.first);
@@ -57,6 +57,6 @@ void CancelPendingCallbackCommand::ReadArguments() {
 }
 
 
-void CancelPendingCallbackCommand::Execute(BrowserProcessHandler* handler) {
+void CancelPendingCallbackCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   handler->CancelPendingCallback(requestId);
 }

@@ -7,7 +7,7 @@ class BrowserProcessHandler;
 
 class HttpRequestClient : public CefURLRequestClient {
  public:
-  HttpRequestClient(BrowserProcessHandler* handler, int httpRequestId);
+  HttpRequestClient(CefRefPtr<BrowserProcessHandler> handler, int httpRequestId);
 
   void OnRequestComplete(CefRefPtr<CefURLRequest> request) override;
   void OnDownloadData(CefRefPtr<CefURLRequest> request,
@@ -27,7 +27,7 @@ class HttpRequestClient : public CefURLRequestClient {
                           int64_t total) override;
 
  private:
-  BrowserProcessHandler* handler;
+  CefRefPtr<BrowserProcessHandler> handler;
   int httpRequestId;
 
   IMPLEMENT_REFCOUNTING(HttpRequestClient);

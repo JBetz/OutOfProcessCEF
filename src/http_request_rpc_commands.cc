@@ -6,7 +6,7 @@
 
 #include "browser_process_handler.h"
 
-void CancelCommand::Execute(BrowserProcessHandler* handler,
-                                        CefRefPtr<CefURLRequest> request) {
+void CancelCommand::Execute(CefRefPtr<BrowserProcessHandler> handler,
+                            CefRefPtr<CefURLRequest> request) {
   request->Cancel();
 }

@@ -10,7 +10,7 @@ class BrowserProcessHandler;
 
 class ClientCommand : public RpcCommand {
  public:
-  virtual void Execute(BrowserProcessHandler* handler) = 0;
+  virtual void Execute(CefRefPtr<BrowserProcessHandler> handler) = 0;
 };
 
 class CreateBrowserCommand : public ClientCommand {
@@ -28,7 +28,7 @@ class CreateBrowserCommand : public ClientCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler) override;
+  void Execute(CefRefPtr<BrowserProcessHandler> handler) override;
 };
 REGISTER_RPC_COMMAND(ClientCommand, "CreateBrowser", CreateBrowserCommand);
 
@@ -43,7 +43,7 @@ class CreateHttpRequestCommand : public ClientCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler) override;
+  void Execute(CefRefPtr<BrowserProcessHandler> handler) override;
 };
 REGISTER_RPC_COMMAND(ClientCommand,
                      "CreateHttpRequest",
@@ -54,7 +54,7 @@ class ShutdownCommand : public ClientCommand {
   void ReadArguments() override {}
 
  public:
-  void Execute(BrowserProcessHandler* handler) override;
+  void Execute(CefRefPtr<BrowserProcessHandler> handler) override;
 };
 REGISTER_RPC_COMMAND(ClientCommand, "Shutdown", ShutdownCommand);
 
@@ -63,7 +63,7 @@ class GetPendingCallbacksCommand : public ClientCommand {
    void ReadArguments() override {}
 
   public:
-   void Execute(BrowserProcessHandler* handler) override;
+   void Execute(CefRefPtr<BrowserProcessHandler> handler) override;
 };
 REGISTER_RPC_COMMAND(ClientCommand,
                      "GetPendingCallbacks",
@@ -77,7 +77,7 @@ class CancelPendingCallbackCommand : public ClientCommand {
   void ReadArguments() override;
 
  public:
-  void Execute(BrowserProcessHandler* handler) override;
+  void Execute(CefRefPtr<BrowserProcessHandler> handler) override;
 };
 REGISTER_RPC_COMMAND(ClientCommand,
                      "CancelPendingCallback",

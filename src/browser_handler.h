@@ -22,7 +22,7 @@ class BrowserHandler : public CefClient,
                        CefLoadHandler,
                        CefDownloadHandler {
  public:
-  BrowserHandler(BrowserProcessHandler* browserProcessHandler,
+  BrowserHandler(CefRefPtr<BrowserProcessHandler> browserProcessHandler,
                  CefPoint windowOrigin,
                  CefRect pageRectangle);
   
@@ -181,7 +181,7 @@ class BrowserHandler : public CefClient,
 
   using TimePoint = std::chrono::steady_clock::time_point;
 
-  BrowserProcessHandler* browserProcessHandler;
+  CefRefPtr<BrowserProcessHandler> browserProcessHandler;
   CefRect pageRectangle;
   CefPoint windowOrigin;
   std::optional<TimePoint> createdAt;

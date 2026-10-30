@@ -11,7 +11,7 @@
 #include "browser_process_handler.h"
 #include "rpc.hpp"
 
-BrowserHandler::BrowserHandler(BrowserProcessHandler* browserProcessHandler,
+BrowserHandler::BrowserHandler(CefRefPtr<BrowserProcessHandler> browserProcessHandler,
                                CefPoint windowOrigin,
                                CefRect pageRectangle)
     : browserProcessHandler(browserProcessHandler),

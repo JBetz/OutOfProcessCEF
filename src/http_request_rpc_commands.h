@@ -6,14 +6,14 @@ class BrowserProcessHandler;
 
 class HttpRequestCommand : public RpcCommand {
   public:
-    virtual void Execute(BrowserProcessHandler* handler,
+    virtual void Execute(CefRefPtr<BrowserProcessHandler> handler,
                        CefRefPtr<CefURLRequest> request) = 0;
 };
 
 class CancelCommand : public HttpRequestCommand {
  public:
   void ReadArguments() override {}
-  void Execute(BrowserProcessHandler* handler,
+  void Execute(CefRefPtr<BrowserProcessHandler> handler,
                CefRefPtr<CefURLRequest> request) override;
 };
 REGISTER_RPC_COMMAND(HttpRequestCommand, "Cancel", CancelCommand);
