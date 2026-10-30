@@ -1,6 +1,5 @@
 #include "browser_handler.h"
 
-#include <SDL3/sdl.h>
 #include <include/cef_scheme.h>
 #include "browser_process_handler.h"
 #include "rpc.hpp"

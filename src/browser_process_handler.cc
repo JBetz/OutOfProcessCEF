@@ -38,16 +38,12 @@ BrowserProcessHandler::BrowserProcessHandler(
       applicationMessageWindowHandle(applicationMessageWindowHandle),
       windowMessageId(windowMessageId),
       outgoingMessageQueue(),
-      pendingCallbacksMutex(SDL_CreateMutex()),
-      socketServer(NULL),
+      socketServer(nullptr),
       browserEntries(),
       isShuttingDown(false),
       streamSocket(nullptr) {}
 
-BrowserProcessHandler::~BrowserProcessHandler() {
-  SDL_DestroyMutex(pendingCallbacksMutex);
-  pendingCallbacksMutex = nullptr;
-}
+BrowserProcessHandler::~BrowserProcessHandler() = default;
 
 NET_Server* BrowserProcessHandler::GetSocketServer() {
   return socketServer;
@@ -127,7 +123,7 @@ void BrowserProcessHandler::OnContextInitialized() {
   }
   CloseHandle(hEvent);
 
-    // Wait for a client to connect before spawning I/O threads.
+  // Wait for a client to connect before spawning I/O threads.
   void* waitSockets[] = {static_cast<void*>(socketServer)};
   NET_WaitUntilInputAvailable(waitSockets, 1, -1);
 
@@ -141,18 +137,12 @@ void BrowserProcessHandler::OnContextInitialized() {
   }
   LOG(INFO) << "Client connected!";
 
-  SDL_Thread* receiveThread =
-      SDL_CreateThread(RpcReceiveThread, "CefRpcReceive", this);
-  if (receiveThread == NULL) {
-    LOG(ERROR) << "Error creating RPC receive thread: " << SDL_GetError();
-    abort();
-  }
+  std::thread receiveThread(RpcReceiveThread,
+                            CefRefPtr<BrowserProcessHandler>(this));
+  receiveThread.detach();
 
-  SDL_Thread* sendThread = SDL_CreateThread(RpcSendThread, "CefRpcSend", this);
-  if (sendThread == NULL) {
-    LOG(ERROR) << "Error creating RPC send thread: " << SDL_GetError();
-    abort();
-  }
+  std::thread sendThread(RpcSendThread, CefRefPtr<BrowserProcessHandler>(this));
+  sendThread.detach();
 }
 
 void BrowserProcessHandler::Client_CreateBrowserRpc(const CefString& requestId,
@@ -450,22 +440,19 @@ void BrowserProcessHandler::HandleRpcRequest(
 
 void BrowserProcessHandler::RegisterPendingCallback(const CefString& requestId,
                                                     PendingCallback callback) {
-  SDL_LockMutex(this->pendingCallbacksMutex);
+  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
   this->pendingCallbacks[requestId] = std::move(callback);
-  SDL_UnlockMutex(this->pendingCallbacksMutex);
 }
 
 void BrowserProcessHandler::CancelPendingCallback(const CefString& requestId) {
-  SDL_LockMutex(this->pendingCallbacksMutex);
+  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
   this->pendingCallbacks.erase(requestId);
-  SDL_UnlockMutex(this->pendingCallbacksMutex);
 }
 
-std::map<CefString, PendingCallback> BrowserProcessHandler::GetPendingCallbacks() {
-  SDL_LockMutex(this->pendingCallbacksMutex);
-  std::map<CefString, PendingCallback> copy = this->pendingCallbacks;
-  SDL_UnlockMutex(this->pendingCallbacksMutex);
-  return copy;
+std::map<CefString, PendingCallback>
+BrowserProcessHandler::GetPendingCallbacks() {
+  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+  return this->pendingCallbacks;
 }
 
 void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
@@ -474,17 +461,17 @@ void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
                                               CefRefPtr<CefValue> error) {
   PendingCallback callback = nullptr;
 
-  SDL_LockMutex(this->pendingCallbacksMutex);
-  auto it = this->pendingCallbacks.find(requestId);
-  if (it != this->pendingCallbacks.end()) {
-    callback = std::move(it->second);
-    this->pendingCallbacks.erase(it);
+  {
+    std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+    auto it = this->pendingCallbacks.find(requestId);
+    if (it != this->pendingCallbacks.end()) {
+      callback = std::move(it->second);
+      this->pendingCallbacks.erase(it);
+    }
   }
-  SDL_UnlockMutex(this->pendingCallbacksMutex);
 
   if (callback) {
     if (success) {
-      // Execute callback (which handles posting to TID_UI if needed)
       callback(returnValue);
     } else {
       LOG(ERROR) << "RPC response error for request: " << error->GetString();
@@ -492,18 +479,14 @@ void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
   }
 }
 
-int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
-  CefRefPtr<BrowserProcessHandler> handler =
-      base::WrapRefCounted<BrowserProcessHandler>(
-          static_cast<BrowserProcessHandler*>(browserProcessHandlerPtr));
-
+void BrowserProcessHandler::RpcReceiveThread(
+    CefRefPtr<BrowserProcessHandler> handler) {
   LOG(INFO) << "Receive thread running";
 
   std::vector<uint8_t> recvBuffer;
   uint8_t temp[1024];
 
   while (true) {
-    // Block until the client sends data.
     void* waitSockets[] = {static_cast<void*>(handler->streamSocket)};
     NET_WaitUntilInputAvailable(waitSockets, 1, -1);
 
@@ -516,7 +499,6 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       break;
     }
 
-    // Process as many full framed messages as available.
     while (recvBuffer.size() >= 4) {
       uint32_t msgLen;
       memcpy(&msgLen, recvBuffer.data(), 4);
@@ -524,27 +506,29 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
       if (recvBuffer.size() < 4 + msgLen)
         break;
 
-      std::string tempJsonString(reinterpret_cast<const char*>(recvBuffer.data() + 4),
-                          msgLen);
+      std::string tempJsonString(
+          reinterpret_cast<const char*>(recvBuffer.data() + 4), msgLen);
       CefString jsonString(tempJsonString);
-      
-      // Consume framed bytes from recvBuffer
+
       recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
-            
+
       CefString errorMessageOut;
-      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(jsonString, JSON_PARSER_ALLOW_TRAILING_COMMAS,
-          errorMessageOut);
+      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(
+          jsonString, JSON_PARSER_ALLOW_TRAILING_COMMAS, errorMessageOut);
       if (!jsonMessage) {
-        LOG(ERROR) << "RpcReceiveThread: JSON parse_error: " << errorMessageOut.ToString();
+        LOG(ERROR) << "RpcReceiveThread: JSON parse_error: "
+                   << errorMessageOut.ToString();
         continue;
       }
 
-      CefRefPtr<CefDictionaryValue> jsonMessageDictionary = jsonMessage->GetDictionary();
+      CefRefPtr<CefDictionaryValue> jsonMessageDictionary =
+          jsonMessage->GetDictionary();
       try {
         if (jsonMessageDictionary->HasKey("requestId")) {
           CefString requestId = jsonMessageDictionary->GetString("requestId");
           bool success = jsonMessageDictionary->GetBool("success");
-          CefRefPtr<CefValue> returnValue = jsonMessageDictionary->GetValue("returnValue");
+          CefRefPtr<CefValue> returnValue =
+              jsonMessageDictionary->GetValue("returnValue");
           CefRefPtr<CefValue> error = jsonMessageDictionary->GetValue("error");
           handler->HandleRpcResponse(requestId, success, returnValue, error);
         } else {
@@ -555,25 +539,21 @@ int BrowserProcessHandler::RpcReceiveThread(void* browserProcessHandlerPtr) {
           CefRefPtr<CefDictionaryValue> arguments =
               jsonMessageDictionary->GetDictionary("arguments");
           handler->HandleRpcRequest(requestId, className, instanceId,
-                                    methodName, arguments); 
+                                    methodName, arguments);
         }
       } catch (const std::exception& e) {
-        LOG(ERROR) << "RpcReceiveThread: exception during dispatch: " << e.what();
+        LOG(ERROR) << "RpcReceiveThread: exception during dispatch: "
+                   << e.what();
       }
     }
   }
-  return 0;
 }
 
-int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
-  CefRefPtr<BrowserProcessHandler> handler =
-      base::WrapRefCounted<BrowserProcessHandler>(
-          static_cast<BrowserProcessHandler*>(browserProcessHandlerPtr));
-
+void BrowserProcessHandler::RpcSendThread(
+    CefRefPtr<BrowserProcessHandler> handler) {
   LOG(INFO) << "Send thread running";
 
   while (true) {
-    // Block until an outgoing message is available.
     std::string outMsg = handler->outgoingMessageQueue.pop();
 
     uint32_t len = static_cast<uint32_t>(outMsg.size());
@@ -587,14 +567,14 @@ int BrowserProcessHandler::RpcSendThread(void* browserProcessHandlerPtr) {
     int total = static_cast<int>(sendBuf.size());
     if (!NET_WriteToStreamSocket(handler->streamSocket, sendBuf.data(),
                                  total)) {
-      LOG(ERROR) << "NET_WriteToStreamSocket failed or connection closed: " << SDL_GetError();
+      LOG(ERROR) << "NET_WriteToStreamSocket failed or connection closed: "
+                 << SDL_GetError();
       break;
     }
     NET_WaitUntilStreamSocketDrained(handler->streamSocket, -1);
     PostMessageW(handler->applicationMessageWindowHandle,
                  handler->windowMessageId, 0, 0);
   }
-  return 0;
 }
 
 void BrowserProcessHandler::RemoveHttpRequest(const int requestId) {
