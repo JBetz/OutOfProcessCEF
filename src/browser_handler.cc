@@ -1,15 +1,15 @@
 #include "browser_handler.h"
 
-#include <include/cef_scheme.h>
-#include "browser_process_handler.h"
-#include "rpc.hpp"
-
 #include <windows.h>
 #include <include/base/cef_bind.h>
 #include <include/base/cef_callback.h>
 #include <include/base/cef_logging.h>
-#include <include/wrapper/cef_closure_task.h>
 #include <include/cef_parser.h>
+#include <include/cef_scheme.h>
+#include <include/wrapper/cef_closure_task.h>
+
+#include "browser_process_handler.h"
+#include "rpc.hpp"
 
 BrowserHandler::BrowserHandler(BrowserProcessHandler* browserProcessHandler,
                                CefPoint windowOrigin,

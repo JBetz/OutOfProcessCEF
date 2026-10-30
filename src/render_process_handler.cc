@@ -6,7 +6,6 @@
 
 #include "render_process_handler.h"
 
-#include <SDL3/sdl.h>
 #include <map>
 #include <string>
 #include "include/base/cef_logging.h"

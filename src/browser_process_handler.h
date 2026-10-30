@@ -1,24 +1,27 @@
 #pragma once
 
 #include <rpc.h>
+#include <windows.h>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
-#include <thread>
 
-#include "SDL3_net/SDL_net.h"
+#include "include/base/cef_callback.h"
 #include "include/cef_base.h"
+#include "include/cef_browser_process_handler.h"
+#include "include/cef_server.h"
 #include "process_handler.h"
 #include "rpc.hpp"
-#include "thread_safe_queue.hpp"
 
 class BrowserHandler;
 
 using PendingCallback = std::function<void(CefRefPtr<CefValue>)>;
 
 class BrowserProcessHandler : public ProcessHandler,
-                              public CefBrowserProcessHandler {
+                              public CefBrowserProcessHandler,
+                              public CefServerHandler {
  public:
   BrowserProcessHandler(int serverPort,
                         HANDLE applicationProcessHandle,
@@ -27,7 +30,7 @@ class BrowserProcessHandler : public ProcessHandler,
   ~BrowserProcessHandler() override;
 
   // Accessors.
-  NET_Server* GetSocketServer();
+  CefRefPtr<CefServer> GetServer();
   CefRefPtr<CefBrowser> GetBrowser(int browserId);
   CefRefPtr<BrowserHandler> GetBrowserHandler(int browserId);
   void RemoveBrowserHandler(int browserId);
@@ -39,7 +42,30 @@ class BrowserProcessHandler : public ProcessHandler,
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override;
   void OnContextInitialized() override;
 
-  // RPC handling.
+  // CefServerHandler methods.
+  void OnServerCreated(CefRefPtr<CefServer> server) override;
+  void OnServerDestroyed(CefRefPtr<CefServer> server) override;
+  void OnClientConnected(CefRefPtr<CefServer> server,
+                         int connection_id) override;
+  void OnClientDisconnected(CefRefPtr<CefServer> server,
+                            int connection_id) override;
+  void OnHttpRequest(CefRefPtr<CefServer> server,
+                     int connection_id,
+                     const CefString& client_address,
+                     CefRefPtr<CefRequest> request) override;
+  void OnWebSocketRequest(CefRefPtr<CefServer> server,
+                          int connection_id,
+                          const CefString& client_address,
+                          CefRefPtr<CefRequest> request,
+                          CefRefPtr<CefCallback> callback) override;
+  void OnWebSocketConnected(CefRefPtr<CefServer> server,
+                            int connection_id) override;
+  void OnWebSocketMessage(CefRefPtr<CefServer> server,
+                          int connection_id,
+                          const void* data,
+                          size_t data_size) override;
+
+  // RPC handling (runs on TID_IO).
   void HandleRpcRequest(const CefString& requestId,
                         const CefString& className,
                         int instanceId,
@@ -54,7 +80,7 @@ class BrowserProcessHandler : public ProcessHandler,
   void CancelPendingCallback(const CefString& requestId);
   std::map<CefString, PendingCallback> GetPendingCallbacks();
 
-  // Incoming RPC messages.
+  // Incoming RPC messages (dispatched to UI thread where required).
   void Client_CreateBrowserRpc(const CefString& requestId,
                                const CefString& url,
                                const CefPoint& windowOrigin,
@@ -104,27 +130,26 @@ class BrowserProcessHandler : public ProcessHandler,
                       const CefString& message);
   void SendMessage(const CefString& payload);
 
-  // RPC threads.
-  static void RpcReceiveThread(CefRefPtr<BrowserProcessHandler> handler);
-  static void RpcSendThread(CefRefPtr<BrowserProcessHandler> handler);
-
  private:
   int serverPort;
   HANDLE applicationProcessHandle;
   HWND applicationWindowHandle;
   HWND applicationMessageWindowHandle;
   int windowMessageId;
-  ThreadSafeQueue<std::string> outgoingMessageQueue;
+
+  CefRefPtr<CefServer> server;
+  std::optional<int> activeConnectionId;
+
   std::mutex pendingCallbacksMutex;
   std::map<CefString, PendingCallback> pendingCallbacks;
+
+  std::mutex entriesMutex;
   std::map<int, std::pair<CefRefPtr<BrowserHandler>, CefRefPtr<CefBrowser>>>
       browserEntries;
   std::map<int, CefRefPtr<CefURLRequest>> httpRequestEntries;
+
   int nextHttpRequestId = 1;
   bool isShuttingDown;
-
-  NET_Server* socketServer;
-  NET_StreamSocket* streamSocket;
 
   IMPLEMENT_REFCOUNTING(BrowserProcessHandler);
   DISALLOW_COPY_AND_ASSIGN(BrowserProcessHandler);

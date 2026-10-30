@@ -10,7 +10,6 @@
 
 #include "include/cef_client.h"
 #include "rpc.hpp"
-#include "thread_safe_queue.hpp"
 
 class BrowserProcessHandler;
 

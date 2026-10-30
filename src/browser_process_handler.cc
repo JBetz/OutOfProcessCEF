@@ -1,30 +1,23 @@
-#include <stdio.h>
-#include <windows.h>
-#include <condition_variable>
-#include <iostream>
-#include <mutex>
-#include <queue>
-#include <string>
-#include <thread>
-#include <variant>
+#include "browser_process_handler.h"
 
-#include <SDL3/sdl.h>
-#include <SDL3_net/SDL_net.h>
+#include <windows.h>
+#include <iostream>
+#include <string>
+
 #include <include/base/cef_bind.h>
 #include <include/base/cef_callback.h>
+#include <include/base/cef_logging.h>
 #include <include/cef_parser.h>
 #include <include/cef_task.h>
 #include <include/cef_urlrequest.h>
 #include <include/wrapper/cef_closure_task.h>
 
 #include "browser_handler.h"
-#include "browser_process_handler.h"
-#include "rpc.hpp"
-#include "thread_safe_queue.hpp"
-#include "http_request_client.h"
-#include "client_rpc_commands.h"
 #include "browser_rpc_commands.h"
+#include "client_rpc_commands.h"
+#include "http_request_client.h"
 #include "http_request_rpc_commands.h"
+#include "rpc.hpp"
 
 const char kEvalMessage[] = "Eval";
 
@@ -37,19 +30,24 @@ BrowserProcessHandler::BrowserProcessHandler(
       applicationProcessHandle(applicationProcessHandle),
       applicationMessageWindowHandle(applicationMessageWindowHandle),
       windowMessageId(windowMessageId),
-      outgoingMessageQueue(),
-      socketServer(nullptr),
+      server(nullptr),
+      activeConnectionId(std::nullopt),
       browserEntries(),
-      isShuttingDown(false),
-      streamSocket(nullptr) {}
+      isShuttingDown(false) {}
 
-BrowserProcessHandler::~BrowserProcessHandler() = default;
+BrowserProcessHandler::~BrowserProcessHandler() {
+  if (server) {
+    server->Shutdown();
+    server = nullptr;
+  }
+}
 
-NET_Server* BrowserProcessHandler::GetSocketServer() {
-  return socketServer;
+CefRefPtr<CefServer> BrowserProcessHandler::GetServer() {
+  return server;
 }
 
 CefRefPtr<CefBrowser> BrowserProcessHandler::GetBrowser(int browserId) {
+  std::lock_guard<std::mutex> lock(entriesMutex);
   auto it = browserEntries.find(browserId);
   if (it != browserEntries.end()) {
     return it->second.second;
@@ -59,6 +57,7 @@ CefRefPtr<CefBrowser> BrowserProcessHandler::GetBrowser(int browserId) {
 
 CefRefPtr<BrowserHandler> BrowserProcessHandler::GetBrowserHandler(
     int browserId) {
+  std::lock_guard<std::mutex> lock(entriesMutex);
   auto it = browserEntries.find(browserId);
   if (it != browserEntries.end()) {
     return it->second.first;
@@ -67,6 +66,7 @@ CefRefPtr<BrowserHandler> BrowserProcessHandler::GetBrowserHandler(
 }
 
 void BrowserProcessHandler::RemoveBrowserHandler(int browserId) {
+  std::lock_guard<std::mutex> lock(entriesMutex);
   browserEntries.erase(browserId);
 
   if (isShuttingDown && browserEntries.empty()) {
@@ -94,68 +94,132 @@ int BrowserProcessHandler::GetWindowMessageId() {
 void BrowserProcessHandler::OnContextInitialized() {
   this->CefBrowserProcessHandler::OnContextInitialized();
 
-  if (!SDL_Init(SDL_INIT_EVENTS)) {
-    LOG(ERROR) << "Error initializing SDL: " << SDL_GetError();
-    abort();
-  }
-
-  if (!NET_Init()) {
-    LOG(ERROR) << "Error initializing SDL_net: " << SDL_GetError();
-    abort();
-  }
-
-  socketServer = NET_CreateServer(NULL, serverPort);
-  if (socketServer == NULL) {
-    LOG(ERROR) << "Error creating server: " << SDL_GetError();
-    abort();
-  }
-
-  LOG(INFO) << "Server started on port " << serverPort;
-  // Signal that the server is ready, then block until a client connects.
-  HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, L"ChromiumSocketReady");
-  if (hEvent == NULL) {
-    LOG(ERROR) << "Error opening ChromiumSocketReady event: " << GetLastError();
-    abort();
-  }
-  if (!SetEvent(hEvent)) {
-    LOG(ERROR) << "Error signaling ChromiumSocketReady event: " << GetLastError();
-    abort();
-  }
-  CloseHandle(hEvent);
-
-  // Wait for a client to connect before spawning I/O threads.
-  void* waitSockets[] = {static_cast<void*>(socketServer)};
-  NET_WaitUntilInputAvailable(waitSockets, 1, -1);
-
-  if (!NET_AcceptClient(socketServer, &streamSocket)) {
-    LOG(ERROR) << "Error accepting client: " << SDL_GetError();
-    abort();
-  }
-  if (!streamSocket) {
-    LOG(ERROR) << "No client connected after WaitUntilInputAvailable";
-    abort();
-  }
-  LOG(INFO) << "Client connected!";
-
-  std::thread receiveThread(RpcReceiveThread,
-                            CefRefPtr<BrowserProcessHandler>(this));
-  receiveThread.detach();
-
-  std::thread sendThread(RpcSendThread, CefRefPtr<BrowserProcessHandler>(this));
-  sendThread.detach();
+  CefServer::CreateServer("127.0.0.1", static_cast<uint16_t>(serverPort), 10,
+                          this);
+  LOG(INFO) << "Starting WebSocket server on port " << serverPort;
 }
 
-void BrowserProcessHandler::Client_CreateBrowserRpc(const CefString& requestId,
-                                                    const CefString& url,
-                                                    const CefPoint& windowOrigin,
-                                                    const CefRect& rectangle,
-                                                    HWND parentWindowHandle,
-                                                    bool windowless,
-                                                    bool hardwareAccelerated,
-                                                    bool private_) {
+void BrowserProcessHandler::OnServerCreated(CefRefPtr<CefServer> server_) {
+  this->server = server_;
+  LOG(INFO) << "WebSocket server listening on "
+            << server->GetAddress().ToString();
+
+  // Signal ChromiumSocketReady once the server is successfully listening.
+  HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, L"ChromiumSocketReady");
+  if (hEvent != NULL) {
+    SetEvent(hEvent);
+    CloseHandle(hEvent);
+  }
+}
+
+void BrowserProcessHandler::OnServerDestroyed(CefRefPtr<CefServer> server_) {
+  LOG(INFO) << "WebSocket server destroyed";
+  this->server = nullptr;
+  this->activeConnectionId.reset();
+}
+
+void BrowserProcessHandler::OnClientConnected(CefRefPtr<CefServer> server_,
+                                              int connection_id) {
+  LOG(INFO) << "TCP client connected: connection_id=" << connection_id;
+}
+
+void BrowserProcessHandler::OnClientDisconnected(CefRefPtr<CefServer> server_,
+                                                 int connection_id) {
+  LOG(INFO) << "Client disconnected: connection_id=" << connection_id;
+  if (activeConnectionId.has_value() &&
+      activeConnectionId.value() == connection_id) {
+    activeConnectionId.reset();
+  }
+}
+
+void BrowserProcessHandler::OnHttpRequest(CefRefPtr<CefServer> server_,
+                                          int connection_id,
+                                          const CefString& client_address,
+                                          CefRefPtr<CefRequest> request) {
+  // Reject standard HTTP requests - only WebSockets are accepted.
+  server->SendHttp500Response(connection_id, "WebSocket endpoint only");
+}
+
+void BrowserProcessHandler::OnWebSocketRequest(
+    CefRefPtr<CefServer> server_,
+    int connection_id,
+    const CefString& client_address,
+    CefRefPtr<CefRequest> request,
+    CefRefPtr<CefCallback> callback) {
+  // Enforce single-client controller policy.
+  if (activeConnectionId.has_value()) {
+    LOG(WARNING) << "Rejecting connection from " << client_address.ToString()
+                 << ": host client already connected (id="
+                 << *activeConnectionId << ")";
+    callback->Cancel();
+    return;
+  }
+  callback->Continue();
+}
+
+void BrowserProcessHandler::OnWebSocketConnected(CefRefPtr<CefServer> server_,
+                                                 int connection_id) {
+  activeConnectionId = connection_id;
+  LOG(INFO) << "WebSocket client connected successfully: connection_id="
+            << connection_id;
+}
+
+void BrowserProcessHandler::OnWebSocketMessage(CefRefPtr<CefServer> server_,
+                                               int connection_id,
+                                               const void* data,
+                                               size_t data_size) {
+  if (!data || data_size == 0) {
+    return;
+  }
+  std::string jsonStr(reinterpret_cast<const char*>(data), data_size);
+  CefString errorMessageOut;
+  CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(
+      jsonStr, JSON_PARSER_ALLOW_TRAILING_COMMAS, errorMessageOut);
+  if (!jsonMessage) {
+    LOG(ERROR) << "OnWebSocketMessage: JSON parse error: "
+               << errorMessageOut.ToString();
+    return;
+  }
+  CefRefPtr<CefDictionaryValue> jsonMessageDictionary =
+      jsonMessage->GetDictionary();
+  if (!jsonMessageDictionary) {
+    LOG(ERROR) << "OnWebSocketMessage: Root JSON value is not a dictionary";
+    return;
+  }
+  try {
+    if (jsonMessageDictionary->HasKey("requestId")) {
+      CefString requestId = jsonMessageDictionary->GetString("requestId");
+      bool success = jsonMessageDictionary->GetBool("success");
+      CefRefPtr<CefValue> returnValue =
+          jsonMessageDictionary->GetValue("returnValue");
+      CefRefPtr<CefValue> error = jsonMessageDictionary->GetValue("error");
+      this->HandleRpcResponse(requestId, success, returnValue, error);
+    } else {
+      CefString requestId = jsonMessageDictionary->GetString("id");
+      CefString className = jsonMessageDictionary->GetString("class");
+      int instanceId = jsonMessageDictionary->GetInt("instanceId");
+      CefString methodName = jsonMessageDictionary->GetString("method");
+      CefRefPtr<CefDictionaryValue> arguments =
+          jsonMessageDictionary->GetDictionary("arguments");
+      this->HandleRpcRequest(requestId, className, instanceId, methodName, arguments);
+    }
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "OnWebSocketMessage: exception during dispatch: " << e.what();
+  }
+}
+
+void BrowserProcessHandler::Client_CreateBrowserRpc(
+    const CefString& requestId,
+    const CefString& url,
+    const CefPoint& windowOrigin,
+    const CefRect& rectangle,
+    HWND parentWindowHandle,
+    bool windowless,
+    bool hardwareAccelerated,
+    bool private_) {
   CefWindowInfo windowInfo;
   if (windowless) {
-    windowInfo.SetAsWindowless(parentWindowHandle);  // no OS parent 
+    windowInfo.SetAsWindowless(parentWindowHandle);
     windowInfo.shared_texture_enabled = hardwareAccelerated;
   } else {
     windowInfo.SetAsChild(parentWindowHandle, rectangle);
@@ -166,20 +230,25 @@ void BrowserProcessHandler::Client_CreateBrowserRpc(const CefString& requestId,
   browserSettings.windowless_frame_rate = 30;
 
   CefRefPtr<CefDictionaryValue> extraInfo = CefDictionaryValue::Create();
-
-  CefRefPtr<BrowserHandler> handler = new BrowserHandler(this, windowOrigin, rectangle);
+  CefRefPtr<BrowserHandler> handler =
+      new BrowserHandler(this, windowOrigin, rectangle);
 
   CefRefPtr<CefRequestContext> requestContext =
       private_ ? CefRequestContext::CreateContext(CefRequestContextSettings(),
                                                   nullptr)
                : CefRequestContext::GetGlobalContext();
-  CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(windowInfo, handler, url, browserSettings, extraInfo, requestContext);
-  
-  int browserId = -1;
+
+  CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(
+      windowInfo, handler, url, browserSettings, extraInfo, requestContext);
+
   if (browser) {
-    browserId = browser->GetIdentifier();
-    browserEntries[browserId] = {handler, browser};
-    LOG(INFO) << "Created browser on UI thread; id=" << browserId << "url=" << url;
+    int browserId = browser->GetIdentifier();
+    {
+      std::lock_guard<std::mutex> lock(entriesMutex);
+      browserEntries[browserId] = {handler, browser};
+    }
+    LOG(INFO) << "Created browser on UI thread; id=" << browserId
+              << " url=" << url;
     CefRefPtr<CefValue> returnValue = CefValue::Create();
     returnValue->SetInt(browserId);
     this->SendResponse(requestId, returnValue);
@@ -199,6 +268,7 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
   CefRefPtr<CefRequest> cefRequest = CefRequest::Create();
   cefRequest->SetURL(url);
   cefRequest->SetMethod(method);
+
   if (body.has_value()) {
     CefRefPtr<CefPostData> postData = CefPostData::Create();
     CefRefPtr<CefPostDataElement> element = CefPostDataElement::Create();
@@ -206,20 +276,26 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
     postData->AddElement(element);
     cefRequest->SetPostData(postData);
   }
+
   if (headers.has_value()) {
-    CefRefPtr<CefDictionaryValue> headersDictionary =
-        headers.value();
+    CefRefPtr<CefDictionaryValue> headersDictionary = headers.value();
     std::vector<CefString> keyList;
     headersDictionary->GetKeys(keyList);
     for (const CefString& key : keyList) {
       cefRequest->SetHeaderByName(key, headersDictionary->GetString(key), true);
     }
   }
+
   CefRefPtr<HttpRequestClient> client =
       new HttpRequestClient(this, httpRequestId);
-  CefRefPtr<CefURLRequest> urlRequest =
-      CefURLRequest::Create(cefRequest, client, CefRequestContext::GetGlobalContext());
-  httpRequestEntries[httpRequestId] = urlRequest;
+  CefRefPtr<CefURLRequest> urlRequest = CefURLRequest::Create(
+      cefRequest, client, CefRequestContext::GetGlobalContext());
+
+  {
+    std::lock_guard<std::mutex> lock(entriesMutex);
+    httpRequestEntries[httpRequestId] = urlRequest;
+  }
+
   CefRefPtr<CefValue> returnValue = CefValue::Create();
   returnValue->SetInt(httpRequestId);
   this->SendResponse(requestId, returnValue);
@@ -227,6 +303,7 @@ void BrowserProcessHandler::Client_CreateHttpRequestRpc(
 
 void BrowserProcessHandler::Client_ShutdownRpc() {
   isShuttingDown = true;
+  std::lock_guard<std::mutex> lock(entriesMutex);
   if (browserEntries.empty()) {
     LOG(INFO) << "No browser entries during shutdown.";
     CefQuitMessageLoop();
@@ -263,10 +340,24 @@ void BrowserProcessHandler::Browser_GetFrameRateRpc(
 }
 
 void BrowserProcessHandler::SendMessage(const CefString& payload) {
-  outgoingMessageQueue.push(payload.ToString());
+  if (!server || !activeConnectionId.has_value()) {
+    LOG(WARNING) << "Cannot send WebSocket message: no active connection";
+    return;
+  }
+
+  const std::string& str = payload.ToString();
+  server->SendWebSocketMessage(activeConnectionId.value(), str.data(), str.size());
+
+  if (applicationMessageWindowHandle && windowMessageId != 0) {
+    PostMessageW(applicationMessageWindowHandle, windowMessageId, 0, 0);
+  }
 }
 
-CefString BrowserProcessHandler::SendRequest(const CefString& className, int instanceId, const CefString& methodName, CefRefPtr<CefDictionaryValue> arguments) {
+CefString BrowserProcessHandler::SendRequest(
+    const CefString& className,
+    int instanceId,
+    const CefString& methodName,
+    CefRefPtr<CefDictionaryValue> arguments) {
   const CefString& requestId = uuid_to_string(CreateUuid());
   CefRefPtr<CefValue> request = CefValue::Create();
   CefRefPtr<CefDictionaryValue> payload = CefDictionaryValue::Create();
@@ -281,11 +372,11 @@ CefString BrowserProcessHandler::SendRequest(const CefString& className, int ins
   return requestId;
 }
 
-CefString BrowserProcessHandler::SendRequest(
-    const CefString& className,
-    int instanceId,
-    const CefString& methodName) {
-  return this->SendRequest(className, instanceId, methodName, CefDictionaryValue::Create());
+CefString BrowserProcessHandler::SendRequest(const CefString& className,
+                                             int instanceId,
+                                             const CefString& methodName) {
+  return this->SendRequest(className, instanceId, methodName,
+                           CefDictionaryValue::Create());
 }
 
 void BrowserProcessHandler::SendResponse(const CefString& requestId,
@@ -321,38 +412,35 @@ void BrowserProcessHandler::SendUnknownInstanceErrorResponse(
     const CefString& requestId,
     const CefString& className,
     int instanceId) {
-    this->SendErrorResponse(requestId,
-                        className.ToString() + " instance " + std::to_string(instanceId) +
-                            " not found");
+  this->SendErrorResponse(requestId, className.ToString() + " instance " +
+                                         std::to_string(instanceId) +
+                                         " not found");
 }
 
-void BrowserProcessHandler::SendDoesNotUnderstandErrorResponse(const CefString& requestId, const CefString& className, const CefString& methodName) {
-  this->SendErrorResponse(requestId,
-                          "Unknown " + className.ToString()  + " method: " + methodName.ToString());
+void BrowserProcessHandler::SendDoesNotUnderstandErrorResponse(
+    const CefString& requestId,
+    const CefString& className,
+    const CefString& methodName) {
+  this->SendErrorResponse(requestId, "Unknown " + className.ToString() +
+                                         " method: " + methodName.ToString());
 }
 
 void BrowserProcessHandler::SendParseErrorResponse(const CefString& requestId,
-    const CefString& className,
-    int instanceId,
-    const CefString& methodName,
-    const CefString& message) {
-  this->SendErrorResponse(requestId, "Error when trying to execute " +
-                                         className.ToString() + ">>" +
-                                         methodName.ToString() + " on instance " +
-                                         std::to_string(instanceId) + ": " +
-                                         message.ToString());
+                                                   const CefString& className,
+                                                   int instanceId,
+                                                   const CefString& methodName,
+                                                   const CefString& message) {
+  this->SendErrorResponse(
+      requestId, "Error when trying to execute " + className.ToString() + ">>" +
+                     methodName.ToString() + " on instance " +
+                     std::to_string(instanceId) + ": " + message.ToString());
 }
-
 
 void BrowserProcessHandler::SendLogMessage(const cef_log_severity_t severity,
                                            const CefString& message) {
-  if (severity == LOGSEVERITY_DEFAULT) {
+  if (severity == LOGSEVERITY_DEFAULT || severity == LOGSEVERITY_INFO) {
     LOG(INFO) << message;
-  } else if (severity == LOGSEVERITY_VERBOSE) {
-    LOG(INFO) << message;
-  } else if (severity == LOGSEVERITY_DEBUG) {
-    LOG(INFO) << message;
-  } else if (severity == LOGSEVERITY_INFO) {
+  } else if (severity == LOGSEVERITY_VERBOSE || severity == LOGSEVERITY_DEBUG) {
     LOG(INFO) << message;
   } else if (severity == LOGSEVERITY_WARNING) {
     LOG(WARNING) << message;
@@ -364,8 +452,7 @@ void BrowserProcessHandler::SendLogMessage(const cef_log_severity_t severity,
   auto arguments = CefDictionaryValue::Create();
   arguments->SetInt("severity", severity);
   arguments->SetString("message", message);
-  this->SendRequest("Client", 1,
-                    "OnLogMessage", arguments);
+  this->SendRequest("Client", 1, "OnLogMessage", arguments);
 }
 
 void BrowserProcessHandler::HandleRpcRequest(
@@ -395,7 +482,8 @@ void BrowserProcessHandler::HandleRpcRequest(
     CefRefPtr<CefBrowser> browser = GetBrowser(instanceId);
     CefRefPtr<BrowserHandler> browserHandler = GetBrowserHandler(instanceId);
     if (!browser || !browserHandler) {
-      this->SendDoesNotUnderstandErrorResponse(requestId, className, methodName);
+      this->SendDoesNotUnderstandErrorResponse(requestId, className,
+                                               methodName);
       return;
     }
     auto cmd = RpcRegistry<BrowserCommand>::Lookup(methodName);
@@ -406,7 +494,8 @@ void BrowserProcessHandler::HandleRpcRequest(
     }
     auto err = cmd->Initialize(requestId, arguments);
     if (err.has_value()) {
-      this->SendParseErrorResponse(requestId, className, instanceId, methodName, err.value().ToString());
+      this->SendParseErrorResponse(requestId, className, instanceId, methodName,
+                                   err.value().ToString());
       return;
     }
     cmd->Execute(this, browser, browserHandler);
@@ -414,15 +503,23 @@ void BrowserProcessHandler::HandleRpcRequest(
   }
 
   if (className == "HttpRequest") {
-    auto it = httpRequestEntries.find(instanceId);
-    if (it == httpRequestEntries.end()) {
+    CefRefPtr<CefURLRequest> request;
+    {
+      std::lock_guard<std::mutex> lock(entriesMutex);
+      auto it = httpRequestEntries.find(instanceId);
+      if (it != httpRequestEntries.end()) {
+        request = it->second;
+      }
+    }
+    if (!request) {
       this->SendDoesNotUnderstandErrorResponse(requestId, className,
                                                methodName);
       return;
     }
     auto cmd = RpcRegistry<HttpRequestCommand>::Lookup(methodName);
     if (!cmd) {
-      this->SendDoesNotUnderstandErrorResponse(requestId, className, methodName);
+      this->SendDoesNotUnderstandErrorResponse(requestId, className,
+                                               methodName);
       return;
     }
     auto err = cmd->Initialize(requestId, arguments);
@@ -431,27 +528,28 @@ void BrowserProcessHandler::HandleRpcRequest(
                                    err.value().ToString());
       return;
     }
-    cmd->Execute(this, it->second);
+    cmd->Execute(this, request);
     return;
   }
 
-  this->SendErrorResponse(requestId, "Unknown RPC target class: " + className.ToString());
+  this->SendErrorResponse(requestId,
+                          "Unknown RPC target class: " + className.ToString());
 }
 
 void BrowserProcessHandler::RegisterPendingCallback(const CefString& requestId,
                                                     PendingCallback callback) {
-  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+  std::lock_guard<std::mutex> lock(this->pendingCallbacksMutex);
   this->pendingCallbacks[requestId] = std::move(callback);
 }
 
 void BrowserProcessHandler::CancelPendingCallback(const CefString& requestId) {
-  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+  std::lock_guard<std::mutex> lock(this->pendingCallbacksMutex);
   this->pendingCallbacks.erase(requestId);
 }
 
 std::map<CefString, PendingCallback>
 BrowserProcessHandler::GetPendingCallbacks() {
-  std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+  std::lock_guard<std::mutex> lock(this->pendingCallbacksMutex);
   return this->pendingCallbacks;
 }
 
@@ -462,7 +560,7 @@ void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
   PendingCallback callback = nullptr;
 
   {
-    std::lock_guard<std::mutex> lock(pendingCallbacksMutex);
+    std::lock_guard<std::mutex> lock(this->pendingCallbacksMutex);
     auto it = this->pendingCallbacks.find(requestId);
     if (it != this->pendingCallbacks.end()) {
       callback = std::move(it->second);
@@ -474,109 +572,13 @@ void BrowserProcessHandler::HandleRpcResponse(const CefString& requestId,
     if (success) {
       callback(returnValue);
     } else {
-      LOG(ERROR) << "RPC response error for request: " << error->GetString();
+      LOG(ERROR) << "RPC response error for request: "
+                 << (error ? error->GetString() : CefString("unknown error"));
     }
-  }
-}
-
-void BrowserProcessHandler::RpcReceiveThread(
-    CefRefPtr<BrowserProcessHandler> handler) {
-  LOG(INFO) << "Receive thread running";
-
-  std::vector<uint8_t> recvBuffer;
-  uint8_t temp[1024];
-
-  while (true) {
-    void* waitSockets[] = {static_cast<void*>(handler->streamSocket)};
-    NET_WaitUntilInputAvailable(waitSockets, 1, -1);
-
-    int received =
-        NET_ReadFromStreamSocket(handler->streamSocket, temp, sizeof(temp));
-    if (received > 0) {
-      recvBuffer.insert(recvBuffer.end(), temp, temp + received);
-    } else if (received < 0) {
-      LOG(ERROR) << "Read error: " << SDL_GetError();
-      break;
-    }
-
-    while (recvBuffer.size() >= 4) {
-      uint32_t msgLen;
-      memcpy(&msgLen, recvBuffer.data(), 4);
-
-      if (recvBuffer.size() < 4 + msgLen)
-        break;
-
-      std::string tempJsonString(
-          reinterpret_cast<const char*>(recvBuffer.data() + 4), msgLen);
-      CefString jsonString(tempJsonString);
-
-      recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + 4 + msgLen);
-
-      CefString errorMessageOut;
-      CefRefPtr<CefValue> jsonMessage = CefParseJSONAndReturnError(
-          jsonString, JSON_PARSER_ALLOW_TRAILING_COMMAS, errorMessageOut);
-      if (!jsonMessage) {
-        LOG(ERROR) << "RpcReceiveThread: JSON parse_error: "
-                   << errorMessageOut.ToString();
-        continue;
-      }
-
-      CefRefPtr<CefDictionaryValue> jsonMessageDictionary =
-          jsonMessage->GetDictionary();
-      try {
-        if (jsonMessageDictionary->HasKey("requestId")) {
-          CefString requestId = jsonMessageDictionary->GetString("requestId");
-          bool success = jsonMessageDictionary->GetBool("success");
-          CefRefPtr<CefValue> returnValue =
-              jsonMessageDictionary->GetValue("returnValue");
-          CefRefPtr<CefValue> error = jsonMessageDictionary->GetValue("error");
-          handler->HandleRpcResponse(requestId, success, returnValue, error);
-        } else {
-          CefString requestId = jsonMessageDictionary->GetString("id");
-          CefString className = jsonMessageDictionary->GetString("class");
-          int instanceId = jsonMessageDictionary->GetInt("instanceId");
-          CefString methodName = jsonMessageDictionary->GetString("method");
-          CefRefPtr<CefDictionaryValue> arguments =
-              jsonMessageDictionary->GetDictionary("arguments");
-          handler->HandleRpcRequest(requestId, className, instanceId,
-                                    methodName, arguments);
-        }
-      } catch (const std::exception& e) {
-        LOG(ERROR) << "RpcReceiveThread: exception during dispatch: "
-                   << e.what();
-      }
-    }
-  }
-}
-
-void BrowserProcessHandler::RpcSendThread(
-    CefRefPtr<BrowserProcessHandler> handler) {
-  LOG(INFO) << "Send thread running";
-
-  while (true) {
-    std::string outMsg = handler->outgoingMessageQueue.pop();
-
-    uint32_t len = static_cast<uint32_t>(outMsg.size());
-    std::vector<uint8_t> sendBuf;
-    sendBuf.resize(4 + outMsg.size());
-    memcpy(sendBuf.data(), &len, 4);
-    if (!outMsg.empty()) {
-      memcpy(sendBuf.data() + 4, outMsg.data(), outMsg.size());
-    }
-
-    int total = static_cast<int>(sendBuf.size());
-    if (!NET_WriteToStreamSocket(handler->streamSocket, sendBuf.data(),
-                                 total)) {
-      LOG(ERROR) << "NET_WriteToStreamSocket failed or connection closed: "
-                 << SDL_GetError();
-      break;
-    }
-    NET_WaitUntilStreamSocketDrained(handler->streamSocket, -1);
-    PostMessageW(handler->applicationMessageWindowHandle,
-                 handler->windowMessageId, 0, 0);
   }
 }
 
 void BrowserProcessHandler::RemoveHttpRequest(const int requestId) {
+  std::lock_guard<std::mutex> lock(entriesMutex);
   httpRequestEntries.erase(requestId);
 }

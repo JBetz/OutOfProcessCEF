@@ -34,8 +34,7 @@ set(CEFPROCESSRUNNER_SRCS
   # response_body_filter.h
   rpc_command.cc
   rpc_command.h
-  rpc.hpp
-  thread_safe_queue.hpp)
+  rpc.hpp)
 set(CEFPROCESSRUNNER_SRCS_WINDOWS
   cefprocessrunner_win.cc)
 APPEND_PLATFORM_SOURCES(CEFPROCESSRUNNER_SRCS)
@@ -66,31 +65,18 @@ if(OS_WINDOWS)
   add_dependencies(${CEF_TARGET} libcef_dll_wrapper)
   SET_EXECUTABLE_TARGET_PROPERTIES(${CEF_TARGET})
 
-  target_include_directories(${CEF_TARGET} PRIVATE
-    ${CMAKE_SOURCE_DIR}/third_party/SDL3/include
-    ${CMAKE_SOURCE_DIR}/third_party/SDL3_net/include
-  )
-
   target_link_libraries(${CEF_TARGET}
     libcef_lib
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
-    ${CMAKE_SOURCE_DIR}/third_party/SDL3/lib/SDL3.lib
-    ${CMAKE_SOURCE_DIR}/third_party/SDL3_net/lib/SDL3_net.lib
   )
 
   # Add the custom manifest files to the executable.
   ADD_WINDOWS_MANIFEST("${CMAKE_CURRENT_SOURCE_DIR}" "${CEF_TARGET}" "exe")
 
-  set(SDL_DLLS
-    "third_party/SDL3/lib/SDL3.dll"
-    "third_party/SDL3_net/lib/SDL3_net.dll"
-   )
-
   # Copy binary and resource files to the target output directory.
   COPY_FILES("${CEF_TARGET}" "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "${CEF_TARGET_OUT_DIR}")
   COPY_FILES("${CEF_TARGET}" "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "${CEF_TARGET_OUT_DIR}")
-  COPY_FILES("${CEF_TARGET}" "${SDL_DLLS}" "${CMAKE_SOURCE_DIR}" "${CEF_TARGET_OUT_DIR}")
 
   # Copy build output to install directory if specified in local_config.cmake.
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/local_config.cmake")
@@ -99,8 +85,10 @@ if(OS_WINDOWS)
   
   if(INSTALL_DIR)
     add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CEF_TARGET_OUT_DIR} ${INSTALL_DIR}
-      COMMENT "Installing CEF build artifacts in ${INSTALL_DIR}"
+      COMMAND ${CMAKE_COMMAND} -E copy
+      $<TARGET_FILE:${CEF_TARGET}>
+      "${INSTALL_DIR}/$<TARGET_FILE_NAME:${CEF_TARGET}>"
+      COMMENT "Copying ${CEF_TARGET} to ${INSTALL_DIR}"
     )
   endif()
 endif()
