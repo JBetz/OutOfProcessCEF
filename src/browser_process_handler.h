@@ -24,9 +24,7 @@ class BrowserProcessHandler : public ProcessHandler,
                               public CefServerHandler {
  public:
   BrowserProcessHandler(int serverPort,
-                        HANDLE applicationProcessHandle,
-                        HWND applicationMessageWindowHandle,
-                        int windowMessageId);
+                        HANDLE applicationProcessHandle);
   ~BrowserProcessHandler() override;
 
   // Accessors.
@@ -35,8 +33,6 @@ class BrowserProcessHandler : public ProcessHandler,
   CefRefPtr<BrowserHandler> GetBrowserHandler(int browserId);
   void RemoveBrowserHandler(int browserId);
   HANDLE GetApplicationProcessHandle();
-  HWND GetApplicationMessageWindowHandle();
-  int GetWindowMessageId();
 
   // CefBrowserProcessHandler methods.
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override;
@@ -133,9 +129,6 @@ class BrowserProcessHandler : public ProcessHandler,
  private:
   int serverPort;
   HANDLE applicationProcessHandle;
-  HWND applicationWindowHandle;
-  HWND applicationMessageWindowHandle;
-  int windowMessageId;
 
   CefRefPtr<CefServer> server;
   std::optional<int> activeConnectionId;

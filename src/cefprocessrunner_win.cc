@@ -89,10 +89,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
         command_line->GetSwitchValue(switches::kServerPort);
     const std::string& application_process_id_str =
         command_line->GetSwitchValue(switches::kApplicationProcessId);
-    const std::string& application_message_window_handle_str =
-        command_line->GetSwitchValue(switches::kApplicationMessageWindowHandle);
-    const std::string& window_message_id_str =
-        command_line->GetSwitchValue(switches::kWindowMessageId);
 
     if (server_port_str.empty()) {
       LOG(ERROR) << "--server - port is required ";
@@ -100,14 +96,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     }
     if (application_process_id_str.empty()) {
       LOG(ERROR)  << "--application-process-id is required";
-      return 1;
-    }
-    if (application_message_window_handle_str.empty()) {
-      LOG(ERROR) << "--application-message-window-handle is required";
-      return 1;
-    }
-    if (window_message_id_str.empty()) {
-      LOG(ERROR) << "--window-message-id is required";
       return 1;
     }
 
@@ -119,16 +107,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
       LOG(ERROR) << "OpenProcess failed for process id " << application_process_id_str;
       return 1;
     }
-
-    HWND applicationMessageWindowHandle = reinterpret_cast<HWND>(
-        std::stoull(application_message_window_handle_str));
-
-    int windowMessageId = std::stoi(window_message_id_str);
-
     handler = new BrowserProcessHandler(serverPort,
-                                        applicationProcessHandle,
-                                        applicationMessageWindowHandle,
-                                        windowMessageId);
+                                        applicationProcessHandle);
   } else if (process_type == ProcessHandler::RendererProcess) {
     handler = new RenderProcessHandler();
   } else if (process_type == ProcessHandler::OtherProcess) {

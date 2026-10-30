@@ -23,13 +23,9 @@ const char kEvalMessage[] = "Eval";
 
 BrowserProcessHandler::BrowserProcessHandler(
     int serverPort,
-    HANDLE applicationProcessHandle,
-    HWND applicationMessageWindowHandle,
-    int windowMessageId)
+    HANDLE applicationProcessHandle)
     : serverPort(serverPort),
       applicationProcessHandle(applicationProcessHandle),
-      applicationMessageWindowHandle(applicationMessageWindowHandle),
-      windowMessageId(windowMessageId),
       server(nullptr),
       activeConnectionId(std::nullopt),
       browserEntries(),
@@ -83,14 +79,6 @@ HANDLE BrowserProcessHandler::GetApplicationProcessHandle() {
   return this->applicationProcessHandle;
 }
 
-HWND BrowserProcessHandler::GetApplicationMessageWindowHandle() {
-  return this->applicationMessageWindowHandle;
-}
-
-int BrowserProcessHandler::GetWindowMessageId() {
-  return this->windowMessageId;
-}
-
 void BrowserProcessHandler::OnContextInitialized() {
   this->CefBrowserProcessHandler::OnContextInitialized();
 
@@ -137,7 +125,7 @@ void BrowserProcessHandler::OnHttpRequest(CefRefPtr<CefServer> server_,
                                           const CefString& client_address,
                                           CefRefPtr<CefRequest> request) {
   // Reject standard HTTP requests - only WebSockets are accepted.
-  server->SendHttp500Response(connection_id, "WebSocket endpoint only");
+  server->SendHttp500Response(connection_id, "WebSocket endpoint only!");
 }
 
 void BrowserProcessHandler::OnWebSocketRequest(
@@ -347,10 +335,6 @@ void BrowserProcessHandler::SendMessage(const CefString& payload) {
 
   const std::string& str = payload.ToString();
   server->SendWebSocketMessage(activeConnectionId.value(), str.data(), str.size());
-
-  if (applicationMessageWindowHandle && windowMessageId != 0) {
-    PostMessageW(applicationMessageWindowHandle, windowMessageId, 0, 0);
-  }
 }
 
 CefString BrowserProcessHandler::SendRequest(
@@ -421,8 +405,7 @@ void BrowserProcessHandler::SendDoesNotUnderstandErrorResponse(
     const CefString& requestId,
     const CefString& className,
     const CefString& methodName) {
-  this->SendErrorResponse(requestId, "Unknown " + className.ToString() +
-                                         " method: " + methodName.ToString());
+  this->SendErrorResponse(requestId, "Unknown method: " + className.ToString() + ">>" + methodName.ToString());
 }
 
 void BrowserProcessHandler::SendParseErrorResponse(const CefString& requestId,
@@ -438,11 +421,9 @@ void BrowserProcessHandler::SendParseErrorResponse(const CefString& requestId,
 
 void BrowserProcessHandler::SendLogMessage(const cef_log_severity_t severity,
                                            const CefString& message) {
-  if (severity == LOGSEVERITY_DEFAULT || severity == LOGSEVERITY_INFO) {
+  if (severity == LOGSEVERITY_DEFAULT || severity == LOGSEVERITY_VERBOSE || severity == LOGSEVERITY_INFO) {
     LOG(INFO) << message;
-  } else if (severity == LOGSEVERITY_VERBOSE || severity == LOGSEVERITY_DEBUG) {
-    LOG(INFO) << message;
-  } else if (severity == LOGSEVERITY_WARNING) {
+ } else if (severity == LOGSEVERITY_WARNING) {
     LOG(WARNING) << message;
   } else if (severity == LOGSEVERITY_ERROR) {
     LOG(ERROR) << message;
@@ -482,8 +463,7 @@ void BrowserProcessHandler::HandleRpcRequest(
     CefRefPtr<CefBrowser> browser = GetBrowser(instanceId);
     CefRefPtr<BrowserHandler> browserHandler = GetBrowserHandler(instanceId);
     if (!browser || !browserHandler) {
-      this->SendDoesNotUnderstandErrorResponse(requestId, className,
-                                               methodName);
+      this->SendUnknownInstanceErrorResponse(requestId, className, instanceId);
       return;
     }
     auto cmd = RpcRegistry<BrowserCommand>::Lookup(methodName);
@@ -512,14 +492,12 @@ void BrowserProcessHandler::HandleRpcRequest(
       }
     }
     if (!request) {
-      this->SendDoesNotUnderstandErrorResponse(requestId, className,
-                                               methodName);
+      this->SendUnknownInstanceErrorResponse(requestId, className, instanceId);
       return;
     }
     auto cmd = RpcRegistry<HttpRequestCommand>::Lookup(methodName);
     if (!cmd) {
-      this->SendDoesNotUnderstandErrorResponse(requestId, className,
-                                               methodName);
+      this->SendDoesNotUnderstandErrorResponse(requestId, className, methodName);
       return;
     }
     auto err = cmd->Initialize(requestId, arguments);
