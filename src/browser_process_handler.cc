@@ -196,7 +196,7 @@ void BrowserProcessHandler::OnWebSocketMessage(CefRefPtr<CefServer> server_,
   }
 }
 
-void BrowserProcessHandler::Client_CreateBrowserRpc(
+void BrowserProcessHandler::CreateBrowser(
     const CefString& requestId,
     const CefString& url,
     const CefPoint& windowOrigin,
@@ -289,7 +289,7 @@ void BrowserProcessHandler::CreateHttpRequest(
   this->SendResponse(requestId, returnValue);
 }
 
-void BrowserProcessHandler::Client_ShutdownRpc() {
+void BrowserProcessHandler::Shutdown() {
   isShuttingDown = true;
   std::lock_guard<std::mutex> lock(entriesMutex);
   if (browserEntries.empty()) {
@@ -303,13 +303,13 @@ void BrowserProcessHandler::Client_ShutdownRpc() {
   }
 }
 
-void BrowserProcessHandler::Browser_CloseRpc(
+void BrowserProcessHandler::CloseBrowser(
     const CefRefPtr<CefBrowser> browser,
     bool forceClose) {
   browser->GetHost()->CloseBrowser(forceClose);
 }
 
-void BrowserProcessHandler::Browser_TryCloseRpc(
+void BrowserProcessHandler::TryCloseBrowser(
     const CefRefPtr<CefBrowser> browser,
     const CefString& requestId) {
   bool canClose = browser->GetHost()->TryCloseBrowser();
@@ -318,7 +318,7 @@ void BrowserProcessHandler::Browser_TryCloseRpc(
   this->SendResponse(requestId, returnValue);
 }
 
-void BrowserProcessHandler::Browser_GetFrameRateRpc(
+void BrowserProcessHandler::GetBrowserFrameRate(
     const CefRefPtr<CefBrowser> browser,
     const CefString& requestId) {
   int frameRate = browser->GetHost()->GetWindowlessFrameRate();

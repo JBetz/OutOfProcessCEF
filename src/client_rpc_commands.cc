@@ -21,7 +21,7 @@ void CreateBrowserCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
   HWND parentHwnd = reinterpret_cast<HWND>(parentWindowHandle);
   CefPostTask(
       TID_UI,
-      base::BindOnce(&BrowserProcessHandler::Client_CreateBrowserRpc, handler,
+      base::BindOnce(&BrowserProcessHandler::CreateBrowser, handler,
                      id, url, windowOrigin, rectangle, parentHwnd,
                      windowless, hardwareAccelerated, private_));
 }
@@ -38,7 +38,7 @@ void CreateHttpRequestCommand::Execute(CefRefPtr<BrowserProcessHandler> handler)
 }
 
 void ShutdownCommand::Execute(CefRefPtr<BrowserProcessHandler> handler) {
-  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::Client_ShutdownRpc,
+  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::Shutdown,
                                      handler));
 }
 

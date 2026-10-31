@@ -257,7 +257,7 @@ void GetFrameRateCommand::Execute(
     CefRefPtr<BrowserProcessHandler> handler,
     CefRefPtr<CefBrowser> browser,
     CefRefPtr<BrowserHandler> browserHandler) {
-  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::Browser_GetFrameRateRpc,
+  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::GetBrowserFrameRate,
                              handler, browser, id));
 }
 
@@ -279,7 +279,7 @@ void CloseCommand::ReadArguments() {
 void CloseCommand::Execute(CefRefPtr<BrowserProcessHandler> handler,
                                   CefRefPtr<CefBrowser> browser,
                                   CefRefPtr<BrowserHandler> browserHandler) {
-  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::Browser_CloseRpc,
+  CefPostTask(TID_UI, base::BindOnce(&BrowserProcessHandler::CloseBrowser,
                                      handler, browser, forceClose));
 }
 
@@ -287,7 +287,7 @@ void TryCloseCommand::Execute(CefRefPtr<BrowserProcessHandler> handler,
                                      CefRefPtr<CefBrowser> browser,
                                      CefRefPtr<BrowserHandler> browserHandler) {
   CefPostTask(TID_UI,
-              base::BindOnce(&BrowserProcessHandler::Browser_TryCloseRpc,
+              base::BindOnce(&BrowserProcessHandler::TryCloseBrowser,
                              handler, browser, id));
 }
 

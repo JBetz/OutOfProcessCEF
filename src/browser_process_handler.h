@@ -77,26 +77,26 @@ class BrowserProcessHandler : public ProcessHandler,
   std::map<CefString, PendingCallback> GetPendingCallbacks();
 
   // Incoming RPC messages (dispatched to UI thread where required).
-  void Client_CreateBrowserRpc(const CefString& requestId,
-                               const CefString& url,
-                               const CefPoint& windowOrigin,
-                               const CefRect& rectangle,
-                               HWND parentWindowHandle,
-                               bool windowless,
-                               bool hardwareAccelerated,
-                               bool private_);
+  void CreateBrowser(const CefString& requestId,
+                     const CefString& url,
+                     const CefPoint& windowOrigin,
+                     const CefRect& rectangle,
+                     HWND parentWindowHandle,
+                     bool windowless,
+                     bool hardwareAccelerated,
+                     bool private_);
   void CreateHttpRequest(
       const CefString& requestId,
       const CefString& url,
       const CefString& method,
       const std::optional<CefRefPtr<CefDictionaryValue>> headers,
       const std::optional<CefString>& body);
-  void Client_ShutdownRpc();
-  void Browser_CloseRpc(const CefRefPtr<CefBrowser> browser, bool forceClose);
-  void Browser_TryCloseRpc(const CefRefPtr<CefBrowser> browser,
-                           const CefString& requestId);
-  void Browser_GetFrameRateRpc(const CefRefPtr<CefBrowser> browser,
-                               const CefString& requestId);
+  void Shutdown();
+  void CloseBrowser(const CefRefPtr<CefBrowser> browser, bool forceClose);
+  void TryCloseBrowser(const CefRefPtr<CefBrowser> browser,
+                       const CefString& requestId);
+  void GetBrowserFrameRate(const CefRefPtr<CefBrowser> browser,
+                    const CefString& requestId);
   void RemoveHttpRequest(int httpRequestId);
 
   // Outgoing RPC messages.
