@@ -52,5 +52,6 @@ extern const char kServerPort[];
 extern const char kApplicationProcessId[];
 extern const char kApplicationMessageWindowHandle[];
 extern const char kWindowMessageId[];
+extern const char kServerReadyEventName[];
 
 }  // namespace switches

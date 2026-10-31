@@ -23,9 +23,11 @@ const char kEvalMessage[] = "Eval";
 
 BrowserProcessHandler::BrowserProcessHandler(
     int serverPort,
-    HANDLE applicationProcessHandle)
+    HANDLE applicationProcessHandle,
+    std::optional<CefString> serverReadyEventName)
     : serverPort(serverPort),
       applicationProcessHandle(applicationProcessHandle),
+      serverReadyEventName(serverReadyEventName),
       server(nullptr),
       activeConnectionId(std::nullopt),
       browserEntries(),
@@ -92,11 +94,13 @@ void BrowserProcessHandler::OnServerCreated(CefRefPtr<CefServer> server_) {
   LOG(INFO) << "WebSocket server listening on "
             << server->GetAddress().ToString();
 
-  // Signal ChromiumSocketReady once the server is successfully listening.
-  HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, L"ChromiumSocketReady");
-  if (hEvent != NULL) {
-    SetEvent(hEvent);
-    CloseHandle(hEvent);
+  if (serverReadyEventName.has_value()) {
+    HANDLE hEvent =
+        OpenEventW(EVENT_MODIFY_STATE, FALSE, serverReadyEventName.value().ToWString().c_str());
+    if (hEvent != NULL) {
+      SetEvent(hEvent);
+      CloseHandle(hEvent);
+    }
   }
 }
 

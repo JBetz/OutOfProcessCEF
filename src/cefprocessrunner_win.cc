@@ -89,15 +89,18 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
         command_line->GetSwitchValue(switches::kServerPort);
     const std::string& application_process_id_str =
         command_line->GetSwitchValue(switches::kApplicationProcessId);
+    const CefString& server_ready_event_name_str =
+        command_line->GetSwitchValue(switches::kServerReadyEventName);
 
     if (server_port_str.empty()) {
-      LOG(ERROR) << "--server - port is required ";
+      LOG(ERROR) << "--server-port is required ";
       return 1;
     }
     if (application_process_id_str.empty()) {
       LOG(ERROR)  << "--application-process-id is required";
       return 1;
     }
+    
 
     int serverPort = std::stoi(server_port_str);
     int applicationProcessId = std::stoi(application_process_id_str);
@@ -107,8 +110,15 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
       LOG(ERROR) << "OpenProcess failed for process id " << application_process_id_str;
       return 1;
     }
+    std::optional<CefString> serverReadyEventName;
+    if (server_ready_event_name_str.empty()) {
+      serverReadyEventName = std::nullopt;
+    } else {
+      serverReadyEventName = server_ready_event_name_str;
+    }
     handler = new BrowserProcessHandler(serverPort,
-                                        applicationProcessHandle);
+                                        applicationProcessHandle,
+                                        serverReadyEventName);
   } else if (process_type == ProcessHandler::RendererProcess) {
     handler = new RenderProcessHandler();
   } else if (process_type == ProcessHandler::OtherProcess) {

@@ -24,7 +24,8 @@ class BrowserProcessHandler : public ProcessHandler,
                               public CefServerHandler {
  public:
   BrowserProcessHandler(int serverPort,
-                        HANDLE applicationProcessHandle);
+                        HANDLE applicationProcessHandle,
+                        std::optional<CefString> serverReadyEventName);
   ~BrowserProcessHandler() override;
 
   // Accessors.
@@ -128,6 +129,7 @@ class BrowserProcessHandler : public ProcessHandler,
  private:
   int serverPort;
   HANDLE applicationProcessHandle;
+  std::optional<CefString> serverReadyEventName;
 
   CefRefPtr<CefServer> server;
   std::optional<int> activeConnectionId;

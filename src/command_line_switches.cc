@@ -58,5 +58,6 @@ const char kHidePipFrame[] = "hide-pip-frame";
 const char kHideChromeBubbles[] = "hide-chrome-bubbles";
 const char kServerPort[] = "server-port";
 const char kApplicationProcessId[] = "application-process-id";
+const char kServerReadyEventName[] = "server-ready-event-name";
 
 }  // namespace switches
